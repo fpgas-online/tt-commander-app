@@ -13,6 +13,10 @@ import viteConfig from './vite.config.js';
  * dependencies keeps the whole graph on the client build. This lives in its own
  * config so the production builds (`vite.config.js`, `vite.embed.config.js`)
  * keep Vite's default client conditions.
+ *
+ * If a dependency ever resolves to the wrong build here (a package that only
+ * ships a `module` condition, say), add it to `test.server.deps.inline` so Vite
+ * transforms it with these conditions instead of letting Node import it raw.
  */
 export default mergeConfig(
   viteConfig,
