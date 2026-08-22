@@ -136,6 +136,21 @@ describe('WebSocketTransport', () => {
     await expect(t.writable.getWriter().write(new Uint8Array([1]))).rejects.toThrow(/closed/);
   });
 
+  test('frames arriving after close are ignored', async () => {
+    const { t, ws } = make();
+    ws.serverOpen();
+    await t.ready;
+    const onMessage = vi.fn();
+    const onError = vi.fn();
+    t.addEventListener('message', onMessage);
+    t.addEventListener('error', onError);
+    ws.serverClose(1011, 'board disconnected');
+    expect(() => ws.serverBinary(new Uint8Array([0x41]))).not.toThrow();
+    expect(() => ws.serverText('{"event":"board","present":false}')).not.toThrow();
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   test('close() closes the socket and resolves; idempotent', async () => {
     const { t, ws } = make();
     ws.serverOpen();
