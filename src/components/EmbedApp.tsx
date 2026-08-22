@@ -98,11 +98,19 @@ export function EmbedApp(props: { options: EmbedOptions }) {
         return;
       }
       const dev = new TTBoardDevice(carrier);
-      dev.addEventListener('close', () => {
+      // Either signal may fire first, and TTBoardDevice stays quiet when the
+      // carrier's readable simply ends (it only dispatches 'close' when its
+      // reader errors or when close() is called), so watch both and act once.
+      let closeHandled = false;
+      const onClosed = () => {
+        if (closeHandled) return;
+        closeHandled = true;
         setDevice(null);
         const info = (carrier as WebSocketTransport).closeInfo;
         scheduleReconnect(info ? `${info.code} ${info.reason}` : 'connection closed');
-      });
+      };
+      dev.addEventListener('close', onClosed);
+      carrier.addEventListener('close', onClosed);
       setDevice(dev);
       setConn({ phase: 'connected' });
       attempt = 0;

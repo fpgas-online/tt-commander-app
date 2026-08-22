@@ -22,6 +22,10 @@ export default defineConfig({
   define: {
     __COMMIT_HASH__: JSON.stringify(commitHash),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    // Vite leaves `process.env.NODE_ENV` alone in library mode (it expects the
+    // consumer's bundler to define it); the embed is loaded straight from a
+    // <script type="module">, where a bare `process` reference is a ReferenceError.
+    'process.env.NODE_ENV': JSON.stringify('production'),
   },
 
   // The host page owns its own favicon/assets; a lib build should not copy public/.
