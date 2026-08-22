@@ -112,6 +112,11 @@ export class WebSocketTransport extends EventTarget implements SerialTransport {
   }
 
   private onMessage(ev: MessageEvent) {
+    // A frame can still arrive after close() (or after the close event, with a
+    // fake socket in tests); enqueueing on the closed controller would throw.
+    if (this.closed) {
+      return;
+    }
     const data: unknown = ev.data;
     if (typeof data === 'string') {
       try {

@@ -22,10 +22,23 @@ jobs:
       - run: npm run build:embed
       - name: Package
         run: |
-          VERSION="${GITHUB_REF_NAME#embed-v}"
+          # Tag builds are released; a manual run just produces a dev tarball.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#embed-v}"
+          else
+            VERSION="0.0.0-dev.$(git rev-parse --short HEAD)"
+          fi
           echo "${VERSION} $(git rev-parse --short HEAD)" > dist/embed/VERSION
-          tar -C dist/embed -czf "tt-commander-embed-${VERSION}.tar.gz" tt-commander-embed.js tt-commander-embed.css VERSION
+          tar -C dist/embed -czf "tt-commander-embed-${VERSION}.tar.gz" tt-commander-embed.js tt-commander-embed.js.map tt-commander-embed.css VERSION
           sha256sum "tt-commander-embed-${VERSION}.tar.gz" > "tt-commander-embed-${VERSION}.tar.gz.sha256"
+      - name: Upload dev artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/embed-v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tt-commander-embed-dev
+          path: |
+            tt-commander-embed-*.tar.gz
+            tt-commander-embed-*.tar.gz.sha256
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/embed-v')
         uses: softprops/action-gh-release@v2

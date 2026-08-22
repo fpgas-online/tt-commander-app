@@ -34,6 +34,9 @@ export default defineConfig({
   build: {
     outDir: 'dist/embed',
     emptyOutDir: true,
+    // The bundle is minified and inlines every dependency; without a map a
+    // host-page stack trace is unreadable.
+    sourcemap: true,
     cssCodeSplit: false,
     lib: {
       entry: path.resolve(__dirname, 'src/embed.tsx'),

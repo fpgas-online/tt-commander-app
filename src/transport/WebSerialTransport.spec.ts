@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026, fpgas.online contributors
+
 import { describe, expect, test, vi } from 'vitest';
 import { WebSerialTransport } from './WebSerialTransport';
 

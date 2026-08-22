@@ -239,6 +239,10 @@ export class TTBoardDevice extends EventTarget {
     const textEncoderStream = new TextEncoderStream();
     this.writer = textEncoderStream.writable.getWriter();
     this.writableStreamClosed = textEncoderStream.readable.pipeTo(this.transport.writable);
+    // The pipe rejects when the carrier goes away (a remote transport can drop
+    // at any moment); close() still awaits it, this only keeps the rejection
+    // from surfacing as an unhandled one when close() is never reached.
+    this.writableStreamClosed.catch(() => {});
     if (this.data.version == null) {
       await this.writer.write('\n'); // Send a newlines to get REPL prompt.
       await this.writer.write('print(f"tt.sdk_version={tt.version}")\r\n');
@@ -282,16 +286,24 @@ export class TTBoardDevice extends EventTarget {
       /* eslint-enable no-control-regex */
     }
 
-    outer: while (transport.state !== 'closed') {
+    // `readable` is typed non-null, but the Web Serial spec nulls a port's
+    // readable after a fatal error, so re-check it before re-piping.
+    outer: while (transport.state !== 'closed' && transport.readable) {
       const textDecoder = new TextDecoderStream();
       this.readableStreamClosed = transport.readable.pipeTo(textDecoder.writable);
+      this.readableStreamClosed.catch(() => {}); // see start(): close() still awaits it
       const [stream1, stream2] = textDecoder.readable.tee();
       this.reader = stream1
         .pipeThrough(new TransformStream(new LineBreakTransformer()))
         .getReader();
 
       this.terminalReader = stream2.getReader();
-      this.processTerminalStream(this.terminalReader);
+      // The terminal branch of the tee errors together with the branch read
+      // below, which handles it; without this catch the carrier dropping would
+      // surface as an unhandled rejection in the host page's console.
+      this.processTerminalStream(this.terminalReader).catch((error: unknown) => {
+        console.debug('Terminal stream ended:', error);
+      });
 
       try {
         // eslint-disable-next-line no-constant-condition
@@ -335,8 +347,12 @@ export class TTBoardDevice extends EventTarget {
   }
 
   async close() {
-    await this.reader?.cancel();
-    await this.terminalReader?.cancel();
+    // Every step here can reject once the carrier is gone (cancelling an
+    // errored reader, writing to or closing a broken writer, closing a socket
+    // that already died). No single failure may abort the rest of the
+    // teardown, or streams stay locked and the next connection leaks them.
+    await this.reader?.cancel().catch(() => {});
+    await this.terminalReader?.cancel().catch(() => {});
     await this.readableStreamClosed?.catch(() => {});
 
     try {
@@ -346,10 +362,18 @@ export class TTBoardDevice extends EventTarget {
       console.warn('Failed to exit RAW REPL mode:', e);
     }
 
-    await this.writer?.close();
-    await this.writableStreamClosed?.catch(() => {});
+    try {
+      await this.writer?.close();
+      await this.writableStreamClosed?.catch(() => {});
+    } catch (e) {
+      console.warn('Failed to close the serial writer:', e);
+    }
 
-    await this.transport.close();
+    try {
+      await this.transport.close();
+    } catch (e) {
+      console.warn('Failed to close the transport:', e);
+    }
     this.dispatchEvent(new Event('close'));
   }
 }
