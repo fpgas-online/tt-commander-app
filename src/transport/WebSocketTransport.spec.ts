@@ -2,57 +2,13 @@
 // Copyright (C) 2026, fpgas.online contributors
 
 import { describe, expect, test, vi } from 'vitest';
+import { FakeWebSocket } from './testing/FakeWebSocket';
 import { WebSocketTransport } from './WebSocketTransport';
 
-/** Minimal scripted WebSocket double (no network). */
-class FakeWebSocket extends EventTarget {
-  static instances: FakeWebSocket[] = [];
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
-  readyState = FakeWebSocket.CONNECTING;
-  binaryType = 'blob';
-  sent: (string | ArrayBuffer | ArrayBufferView)[] = [];
-  constructor(
-    public url: string,
-    public protocols?: string | string[],
-  ) {
-    super();
-    FakeWebSocket.instances.push(this);
-  }
-  send(data: string | ArrayBuffer | ArrayBufferView) {
-    this.sent.push(data);
-  }
-  close(code = 1000, reason = '') {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent('close', { code, reason, wasClean: true }));
-  }
-  // test helpers
-  serverOpen() {
-    this.readyState = FakeWebSocket.OPEN;
-    this.dispatchEvent(new Event('open'));
-  }
-  serverBinary(bytes: Uint8Array) {
-    this.dispatchEvent(
-      new MessageEvent('message', {
-        data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-      }),
-    );
-  }
-  serverText(text: string) {
-    this.dispatchEvent(new MessageEvent('message', { data: text }));
-  }
-  serverClose(code: number, reason: string) {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent('close', { code, reason, wasClean: true }));
-  }
-}
-
 function make() {
-  FakeWebSocket.instances = [];
+  FakeWebSocket.reset();
   const t = new WebSocketTransport('ws://example/serial', {
-    WebSocketImpl: FakeWebSocket as unknown as typeof WebSocket,
+    WebSocketImpl: FakeWebSocket.asImpl(),
   });
   return { t, ws: FakeWebSocket.instances[0] };
 }
@@ -165,9 +121,9 @@ describe('WebSocketTransport', () => {
 
   test('open timeout rejects ready and closes', async () => {
     vi.useFakeTimers();
-    FakeWebSocket.instances = [];
+    FakeWebSocket.reset();
     const t = new WebSocketTransport('ws://example/serial', {
-      WebSocketImpl: FakeWebSocket as unknown as typeof WebSocket,
+      WebSocketImpl: FakeWebSocket.asImpl(),
       openTimeoutMs: 50,
     });
     const rejection = expect(t.ready).rejects.toThrow(/timeout/);
