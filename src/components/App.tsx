@@ -7,6 +7,7 @@ import { Warning } from '@suid/icons-material';
 import { CssBaseline, Paper, Stack, ThemeProvider, Typography } from '@suid/material';
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { compareVersions, minimumFirmwareVersion } from '~/model/firmware';
+import { WebSerialTransport } from '~/transport/WebSerialTransport';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { theme } from '~/utils/theme';
 import { BoardCommander } from './BoardCommander';
@@ -31,7 +32,7 @@ export function App() {
         filters: [{ usbVendorId: 0x2e8a, usbProductId: 0x0005 }],
       });
       await port.open({ baudRate: 115200 });
-      const device = new TTBoardDevice(port);
+      const device = new TTBoardDevice(new WebSerialTransport(port));
       device.addEventListener('close', () => setBreakoutDevice(null));
       setBreakoutDevice(device);
       setFirmwareUpdateRequired(false);
