@@ -8,7 +8,10 @@
     "start": "vite",
     "build": "vite build",
     "test": "vitest",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint --config eslint.config.cjs src --ext .ts,.tsx && prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "build:embed": "vite build --config vite.embed.config.js"
   },
   "keywords": [
     "Web Serial",

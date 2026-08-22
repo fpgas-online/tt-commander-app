@@ -10,7 +10,7 @@ export interface IReplPanelProps {
 }
 
 export function ReplPanel(props: IReplPanelProps) {
-  let ref: HTMLDivElement;
+  let ref!: HTMLDivElement;
   let terminal: Terminal;
 
   onMount(async () => {

@@ -1,2 +1,9 @@
 dist
 node_modules
+
+# git worktrees for feature branches (superpowers:using-git-worktrees)
+.worktrees/
+# SDD workspace
+.superpowers/
+# local scratch
+tmp/

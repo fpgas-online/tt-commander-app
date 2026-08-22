@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [fpgas-online]
+  pull_request:
+    branches: [fpgas-online]
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npx vitest run
+      - run: npm run build

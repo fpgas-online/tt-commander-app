@@ -11,7 +11,7 @@ export function extractRepoFromURL(githubUrl: string) {
     }
 
     return pathParts.slice(0, 2).join('/');
-  } catch (err) {
+  } catch {
     return null;
   }
 }

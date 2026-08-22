@@ -57,7 +57,7 @@ export function App() {
       let outdated = false;
       try {
         outdated = compareVersions(device.data.version, minimumFirmwareVersion) < 0;
-      } catch (e) {
+      } catch {
         setUnsupportedVersion(device.data.version);
       }
       setFirmwareUpdateRequired(outdated ? device.data.version : false);
