@@ -88,9 +88,10 @@ export function EmbedApp(props: { options: EmbedOptions }) {
 
   const connect = async () => {
     if (disposed) return;
-    // Board presence is per-connection: the previous socket's last word about
-    // it says nothing about the board behind the new one.
+    // Board presence and carrier notices are per-connection: the previous
+    // socket's last word about them says nothing about the new one.
     setBoardPresent(null);
+    setCarrierNotice(null);
     setConn({ phase: 'connecting', attempt });
     closeHandled = false;
     try {
