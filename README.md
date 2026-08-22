@@ -1,3 +1,7 @@
+> **fpgas.online fork** — adds a WebSocket transport and an embeddable build for
+> [tinytapeout.fpgas.online](https://tinytapeout.fpgas.online). See [README.fpgas-online.md](README.fpgas-online.md).
+> Upstream README follows.
+
 # tt-commander-app
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
