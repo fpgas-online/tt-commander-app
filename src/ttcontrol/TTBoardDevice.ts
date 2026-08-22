@@ -5,6 +5,7 @@ import { createStore } from 'solid-js/store';
 import { updateDeviceState } from '~/model/DeviceState';
 import { compareVersions, parseFirmwareVersion } from '~/model/firmware';
 import { DesignAddress, formatDesignAddress, loadShuttle } from '~/model/shuttle';
+import type { SerialTransport } from '~/transport/SerialTransport';
 import { LineBreakTransformer } from '~/utils/LineBreakTransformer';
 import ttControl from './ttcontrol.py?raw';
 
@@ -60,7 +61,7 @@ export class TTBoardDevice extends EventTarget {
   private terminalListener: TerminalListener | null = null;
   private setData;
 
-  constructor(readonly port: SerialPort) {
+  constructor(readonly transport: SerialTransport) {
     super();
     const [data, setData] = createStore({
       boot: false,
@@ -237,7 +238,7 @@ export class TTBoardDevice extends EventTarget {
 
     const textEncoderStream = new TextEncoderStream();
     this.writer = textEncoderStream.writable.getWriter();
-    this.writableStreamClosed = textEncoderStream.readable.pipeTo(this.port.writable);
+    this.writableStreamClosed = textEncoderStream.readable.pipeTo(this.transport.writable);
     if (this.data.version == null) {
       await this.writer.write('\n'); // Send a newlines to get REPL prompt.
       await this.writer.write('print(f"tt.sdk_version={tt.version}")\r\n');
@@ -267,7 +268,7 @@ export class TTBoardDevice extends EventTarget {
   }
 
   private async run() {
-    const { port } = this;
+    const { transport } = this;
 
     function cleanupRawREPL(value: string) {
       /* eslint-disable no-control-regex */
@@ -281,9 +282,9 @@ export class TTBoardDevice extends EventTarget {
       /* eslint-enable no-control-regex */
     }
 
-    while (port.readable) {
+    outer: while (transport.state !== 'closed') {
       const textDecoder = new TextDecoderStream();
-      this.readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      this.readableStreamClosed = transport.readable.pipeTo(textDecoder.writable);
       const [stream1, stream2] = textDecoder.readable.tee();
       this.reader = stream1
         .pipeThrough(new TransformStream(new LineBreakTransformer()))
@@ -298,7 +299,9 @@ export class TTBoardDevice extends EventTarget {
           const { value, done } = await this.reader.read();
           if (done) {
             this.reader.releaseLock();
-            return;
+            // A transport's readable ends exactly once (unlike a WebSerial port,
+            // which upstream re-checks in a loop); do not re-pipe a finished stream.
+            break outer;
           }
           if (value && !this.terminalListener) {
             const cleanValue = cleanupRawREPL(value);
@@ -346,7 +349,7 @@ export class TTBoardDevice extends EventTarget {
     await this.writer?.close();
     await this.writableStreamClosed?.catch(() => {});
 
-    await this.port.close();
+    await this.transport.close();
     this.dispatchEvent(new Event('close'));
   }
 }
