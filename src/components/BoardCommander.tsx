@@ -13,6 +13,10 @@ import { ReplPanel } from './ReplPanel';
 
 export interface IBreakoutControlProps {
   device: TTBoardDevice;
+  /** Embedded (fpgas.online) mode: no local Web Serial, the host page owns the connection. */
+  embedded?: boolean;
+  /** Show maintenance-only controls (e.g. Reset to Bootloader) in embedded mode. */
+  admin?: boolean;
 }
 
 type ITabName = 'config' | 'interact' | 'pinout' | 'repl';
@@ -82,7 +86,7 @@ export function BoardCommander(props: IBreakoutControlProps) {
           </Typography>
         </Stack>
         <Button onClick={disconnect} variant="outlined">
-          Disconnect
+          {props.embedded ? 'Reconnect' : 'Disconnect'}
         </Button>
       </Stack>
 
@@ -129,11 +133,13 @@ export function BoardCommander(props: IBreakoutControlProps) {
 
       <DebugLogs logs={props.device.data.logs} />
 
-      <Stack marginTop={1} direction="row">
-        <Button onClick={() => props.device.bootloader()} variant="outlined">
-          Reset to Bootloader
-        </Button>
-      </Stack>
+      <Show when={!props.embedded || props.admin}>
+        <Stack marginTop={1} direction="row">
+          <Button onClick={() => props.device.bootloader()} variant="outlined">
+            Reset to Bootloader
+          </Button>
+        </Stack>
+      </Show>
     </Stack>
   );
 }
