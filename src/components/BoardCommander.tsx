@@ -63,9 +63,13 @@ export function BoardCommander(props: IBreakoutControlProps) {
           </Typography>
           <Typography>
             Firmware: <strong>{props.device.data.version ?? '<unknown>'}</strong>
+            {/* Embedded viewers cannot flash the board, and EmbedApp already
+                shows a banner when the firmware is too old to drive. */}
             <Show
               when={
-                props.device.data.version && !isLatestFirmwareVersion(props.device.data.version)
+                !props.embedded &&
+                props.device.data.version &&
+                !isLatestFirmwareVersion(props.device.data.version)
               }
             >
               <Link
