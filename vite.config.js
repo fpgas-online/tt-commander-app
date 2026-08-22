@@ -23,4 +23,8 @@ export default defineConfig({
     __COMMIT_HASH__: JSON.stringify(commitHash.trim()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+
+  test: {
+    environment: 'jsdom',
+  },
 });
