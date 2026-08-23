@@ -112,6 +112,11 @@ export function EmbedApp(props: { options: EmbedOptions }) {
         // Release this connection's reader/writer/streams before the next one
         // is built; close() is fully guarded, so a broken carrier is fine.
         void dev.close().catch(() => {});
+        // dev.close()'s teardown can stall (e.g. awaiting a REPL response
+        // that will never arrive once the carrier is gone); close the
+        // carrier directly too so a retry never finds the previous
+        // WebSocket still open (#7).
+        void carrier.close().catch(() => {});
         const info = (carrier as WebSocketTransport).closeInfo;
         if (connectedAt != null && Date.now() - connectedAt >= STABLE_CONNECTION_MS) {
           attempt = 0; // the connection was healthy; start the back-off over
