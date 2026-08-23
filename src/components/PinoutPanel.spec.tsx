@@ -50,6 +50,34 @@ const demoAProject: Project = {
   type: 'project',
 };
 
+const demoB: FpgaDesign = {
+  name: 'tt_um_demo_b',
+  title: 'Demo B',
+  author: 'fpgas.online',
+  description: 'Second demo',
+  docs_url: '',
+  repo_url: '',
+  clock_hz: 1000,
+  pinout: {
+    ui_in: ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7'],
+    uo_out: ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'],
+    uio: ['', '', '', '', '', '', '', ''],
+  },
+  source: 'demo',
+};
+
+const demoBProject: Project = {
+  macro: 'tt_um_demo_b',
+  address: 1,
+  title: 'Demo B',
+  author: 'fpgas.online',
+  repo: '',
+  commit: '',
+  clock_hz: 1000,
+  danger_level: 'safe',
+  type: 'project',
+};
+
 /** Let queued resource promise jobs run. */
 async function flush() {
   await Promise.resolve();
@@ -85,6 +113,64 @@ describe('PinoutPanel (fpga)', () => {
     expect(host.textContent).toContain('fpgas.online');
     expect(host.textContent).toContain('First demo');
     expect(fetchMock).not.toHaveBeenCalled();
+
+    dispose();
+    host.remove();
+  });
+
+  test('re-derives the pinout when the selected design changes while mounted', async () => {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    updateFpgaDesigns({ byName: { tt_um_demo_a: demoA, tt_um_demo_b: demoB } });
+    updateShuttle({ projects: [demoAProject, demoBProject] });
+
+    const device = new TTBoardDevice(new InertTransport());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const dispose = render(() => <PinoutPanel device={device} />, host);
+    await flush();
+
+    expect(host.textContent).toContain('a0');
+    expect(host.textContent).not.toContain('b0');
+
+    updateDeviceState({ selectedDesign: 1 });
+    await flush();
+
+    expect(host.textContent).toContain('b0');
+    expect(host.textContent).toContain('c0');
+    expect(host.textContent).not.toContain('a0');
+
+    dispose();
+    host.remove();
+  });
+
+  test('re-derives the pinout when fpgaDesigns.byName is refreshed while mounted', async () => {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    updateFpgaDesigns({ byName: { tt_um_demo_a: demoA } });
+    updateShuttle({ projects: [demoAProject] });
+
+    const device = new TTBoardDevice(new InertTransport());
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const dispose = render(() => <PinoutPanel device={device} />, host);
+    await flush();
+
+    expect(host.textContent).toContain('a0');
+
+    // Simulate refreshDesigns() picking up an updated pinout for the same design.
+    const updatedDemoA: FpgaDesign = {
+      ...demoA,
+      pinout: {
+        ui_in: ['z0', 'z1', 'z2', 'z3', 'z4', 'z5', 'z6', 'z7'],
+        uo_out: ['y0', 'y1', 'y2', 'y3', 'y4', 'y5', 'y6', 'y7'],
+        uio: ['', '', '', '', '', '', '', ''],
+      },
+    };
+    updateFpgaDesigns({ byName: { tt_um_demo_a: updatedDemoA } });
+    await flush();
+
+    expect(host.textContent).toContain('z0');
+    expect(host.textContent).toContain('y0');
+    expect(host.textContent).not.toContain('a0');
 
     dispose();
     host.remove();

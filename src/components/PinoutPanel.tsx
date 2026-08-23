@@ -33,39 +33,42 @@ export interface IPinoutPanelProps {
 export function PinoutPanel(props: IPinoutPanelProps) {
   const selectedProject = () => findProject(shuttle.projects, selectedDesignAddress());
 
-  const [projectInfo] = createResource(async () => {
-    const project = selectedProject();
-    if (!project) {
-      return null;
-    }
+  const [projectInfo] = createResource(
+    () => ({ design: selectedDesignAddress(), byName: fpgaDesigns.byName, id: shuttle.id }),
+    async (src) => {
+      const project = findProject(shuttle.projects, src.design);
+      if (!project) {
+        return null;
+      }
 
-    if (boardInfo.kind === 'fpga') {
-      const d = fpgaDesigns.byName[project.macro];
-      if (!d) return null;
-      return {
-        macro: d.name,
-        author: d.author,
-        description: d.description,
-        pinout: pinoutFromDesign(d),
-        analog_pins: [],
-      };
-    }
+      if (boardInfo.kind === 'fpga') {
+        const d = src.byName[project.macro];
+        if (!d) return null;
+        return {
+          macro: d.name,
+          author: d.author,
+          description: d.description,
+          pinout: pinoutFromDesign(d),
+          analog_pins: [],
+        };
+      }
 
-    const cached = extraProjectInfo.get(project);
-    if (cached) {
-      return cached;
-    }
+      const cached = extraProjectInfo.get(project);
+      if (cached) {
+        return cached;
+      }
 
-    const response = await fetch(
-      `https://index.tinytapeout.com/${shuttle.id}.json?fields=author,description,pinout,analog_pins&filter=${project.macro}`,
-    );
-    const json: { projects: ExtraProjectInfo[] } = await response.json();
-    const result = json.projects.find((p) => p.macro === project.macro);
-    if (result) {
-      extraProjectInfo.set(project, result);
-    }
-    return result;
-  });
+      const response = await fetch(
+        `https://index.tinytapeout.com/${src.id}.json?fields=author,description,pinout,analog_pins&filter=${project.macro}`,
+      );
+      const json: { projects: ExtraProjectInfo[] } = await response.json();
+      const result = json.projects.find((p) => p.macro === project.macro);
+      if (result) {
+        extraProjectInfo.set(project, result);
+      }
+      return result;
+    },
+  );
 
   const pins = [0, 1, 2, 3, 4, 5, 6, 7];
 
