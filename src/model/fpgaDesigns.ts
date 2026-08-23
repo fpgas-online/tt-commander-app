@@ -34,6 +34,20 @@ export const [fpgaDesigns, updateFpgaDesigns] = createStore({
   error: null as string | null,
 });
 
+/**
+ * Maps a design's daemon pinout (keyed `ui_in`/`uo_out`/`uio`) onto the
+ * `ui[i]`/`uo[i]`/`uio[i]` keys the Pinout tab expects (matching the shape of
+ * TinyTapeout's shuttle index). A missing pin list contributes no keys.
+ */
+export function pinoutFromDesign(d: FpgaDesign): Record<string, string> {
+  const pinout: Record<string, string> = {};
+  (['ui_in', 'uo_out', 'uio'] as const).forEach((k) => {
+    const key = k === 'ui_in' ? 'ui' : k === 'uo_out' ? 'uo' : 'uio';
+    (d.pinout[k] ?? []).forEach((label, i) => (pinout[`${key}[${i}]`] = label));
+  });
+  return pinout;
+}
+
 export function designToProject(d: FpgaDesign, index: number): Project {
   return {
     macro: d.name,

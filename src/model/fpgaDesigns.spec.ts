@@ -5,6 +5,7 @@ import {
   enableFpgaDesign,
   fpgaDesigns,
   loadFpgaDesigns,
+  pinoutFromDesign,
 } from './fpgaDesigns';
 import { shuttle } from './shuttle';
 
@@ -64,6 +65,41 @@ describe('designToProject', () => {
       title: 'my_upload',
       clock_hz: 0,
     });
+  });
+});
+
+describe('pinoutFromDesign', () => {
+  it('maps ui_in/uo_out/uio pin lists onto ui[i]/uo[i]/uio[i] keys', () => {
+    expect(pinoutFromDesign(designs[1] as never)).toEqual({
+      'ui[0]': 'a0',
+      'ui[1]': 'a1',
+      'ui[2]': 'a2',
+      'ui[3]': 'a3',
+      'ui[4]': 'a4',
+      'ui[5]': 'a5',
+      'ui[6]': 'a6',
+      'ui[7]': 'a7',
+      'uo[0]': 'o0',
+      'uo[1]': 'o1',
+      'uo[2]': 'o2',
+      'uo[3]': 'o3',
+      'uo[4]': 'o4',
+      'uo[5]': 'o5',
+      'uo[6]': 'o6',
+      'uo[7]': 'o7',
+      'uio[0]': '',
+      'uio[1]': '',
+      'uio[2]': '',
+      'uio[3]': '',
+      'uio[4]': '',
+      'uio[5]': '',
+      'uio[6]': '',
+      'uio[7]': '',
+    });
+  });
+
+  it('omits keys for pin lists absent from the design', () => {
+    expect(pinoutFromDesign(designs[0] as never)).toEqual({});
   });
 });
 

@@ -8,8 +8,10 @@ import {
   Typography,
 } from '@suid/material';
 import { createResource, For, Show } from 'solid-js';
+import { boardInfo } from '~/model/board';
 import { selectedDesignAddress } from '~/model/DeviceState';
 import { compareVersions } from '~/model/firmware';
+import { fpgaDesigns, pinoutFromDesign } from '~/model/fpgaDesigns';
 import { findProject, Project, shuttle } from '~/model/shuttle';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { AnalogPinoutTable } from './AnalogPinoutTable';
@@ -35,6 +37,18 @@ export function PinoutPanel(props: IPinoutPanelProps) {
     const project = selectedProject();
     if (!project) {
       return null;
+    }
+
+    if (boardInfo.kind === 'fpga') {
+      const d = fpgaDesigns.byName[project.macro];
+      if (!d) return null;
+      return {
+        macro: d.name,
+        author: d.author,
+        description: d.description,
+        pinout: pinoutFromDesign(d),
+        analog_pins: [],
+      };
     }
 
     const cached = extraProjectInfo.get(project);
