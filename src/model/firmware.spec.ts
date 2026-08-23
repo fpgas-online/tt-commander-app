@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { compareVersions, parseFirmwareVersion } from './firmware';
+import { compareVersions, parseFirmwareVersion, safeCompareVersions } from './firmware';
 
 describe('parseFirmwareVersion', () => {
   test('parses stable version', () => {
@@ -120,5 +120,22 @@ describe('compareVersions', () => {
     expect(compareVersions('2.0-dev', '2.0.1')).toBe(1);
     expect(compareVersions('2.0-dev', '2.1.0')).toBe(-1);
     expect(compareVersions('2.1-dev', '2.0-dev')).toBe(1);
+  });
+});
+
+describe('safeCompareVersions', () => {
+  test('treats an unparseable version as 0.0.0 instead of throwing', () => {
+    expect(safeCompareVersions('unknown', '2.0.4')).toBeLessThan(0);
+    expect(safeCompareVersions('2.0.4', 'unknown')).toBeGreaterThan(0);
+    expect(safeCompareVersions('2.0.4', '2.0.4')).toBe(0);
+  });
+
+  test('compares two parseable versions exactly like compareVersions', () => {
+    expect(safeCompareVersions('2.0.0RC1', '2.0.0')).toBe(compareVersions('2.0.0RC1', '2.0.0'));
+    expect(safeCompareVersions('3.1.0', '2.0.4')).toBe(compareVersions('3.1.0', '2.0.4'));
+  });
+
+  test('two unparseable versions compare equal', () => {
+    expect(safeCompareVersions('unknown', 'garbage')).toBe(0);
   });
 });

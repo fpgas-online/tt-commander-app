@@ -8,8 +8,10 @@ import {
   Typography,
 } from '@suid/material';
 import { createResource, For, Show } from 'solid-js';
+import { boardInfo } from '~/model/board';
 import { selectedDesignAddress } from '~/model/DeviceState';
-import { compareVersions } from '~/model/firmware';
+import { safeCompareVersions } from '~/model/firmware';
+import { fpgaDesigns, pinoutFromDesign } from '~/model/fpgaDesigns';
 import { findProject, Project, shuttle } from '~/model/shuttle';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { AnalogPinoutTable } from './AnalogPinoutTable';
@@ -31,27 +33,42 @@ export interface IPinoutPanelProps {
 export function PinoutPanel(props: IPinoutPanelProps) {
   const selectedProject = () => findProject(shuttle.projects, selectedDesignAddress());
 
-  const [projectInfo] = createResource(async () => {
-    const project = selectedProject();
-    if (!project) {
-      return null;
-    }
+  const [projectInfo] = createResource(
+    () => ({ design: selectedDesignAddress(), byName: fpgaDesigns.byName, id: shuttle.id }),
+    async (src) => {
+      const project = findProject(shuttle.projects, src.design);
+      if (!project) {
+        return null;
+      }
 
-    const cached = extraProjectInfo.get(project);
-    if (cached) {
-      return cached;
-    }
+      if (boardInfo.kind === 'fpga') {
+        const d = src.byName[project.macro];
+        if (!d) return null;
+        return {
+          macro: d.name,
+          author: d.author,
+          description: d.description,
+          pinout: pinoutFromDesign(d),
+          analog_pins: [],
+        };
+      }
 
-    const response = await fetch(
-      `https://index.tinytapeout.com/${shuttle.id}.json?fields=author,description,pinout,analog_pins&filter=${project.macro}`,
-    );
-    const json: { projects: ExtraProjectInfo[] } = await response.json();
-    const result = json.projects.find((p) => p.macro === project.macro);
-    if (result) {
-      extraProjectInfo.set(project, result);
-    }
-    return result;
-  });
+      const cached = extraProjectInfo.get(project);
+      if (cached) {
+        return cached;
+      }
+
+      const response = await fetch(
+        `https://index.tinytapeout.com/${src.id}.json?fields=author,description,pinout,analog_pins&filter=${project.macro}`,
+      );
+      const json: { projects: ExtraProjectInfo[] } = await response.json();
+      const result = json.projects.find((p) => p.macro === project.macro);
+      if (result) {
+        extraProjectInfo.set(project, result);
+      }
+      return result;
+    },
+  );
 
   const pins = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -101,7 +118,7 @@ export function PinoutPanel(props: IPinoutPanelProps) {
         <AnalogPinoutTable
           analogPins={projectInfo()?.analog_pins ?? []}
           pinout={projectInfo()?.pinout ?? {}}
-          useLetterLabels={compareVersions(props.device.data.version ?? '0.0.0', '3.0.0') >= 0}
+          useLetterLabels={safeCompareVersions(props.device.data.version ?? '0.0.0', '3.0.0') >= 0}
         />
       </Show>
     </Stack>
