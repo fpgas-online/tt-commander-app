@@ -45,12 +45,15 @@ package.json                        version 0.2.0
 ### Task 1: `fpgaDesigns` store — load + enable via the daemon
 
 **Files:**
+
 - Create: `src/model/fpgaDesigns.ts`, `src/model/fpgaDesigns.spec.ts`
 
 **Interfaces:**
+
 - Produces: `export interface FpgaDesign { name: string; title: string; author: string; description: string; docs_url: string; repo_url: string; clock_hz: number | null; pinout: Record<string, string[]>; source: 'demo' | 'upload' }`; `export const [fpgaDesigns, updateFpgaDesigns]` store `{ enabled: string | null; byName: Record<string, FpgaDesign>; loading: boolean; error: string | null }`; `export async function loadFpgaDesigns(apiBase: string): Promise<void>` (fills `shuttle` via `updateShuttle({ id: 'FPGA', projects, loading: false })` and `fpgaDesigns`); `export async function enableFpgaDesign(apiBase: string, name: string, clockHz?: number): Promise<{ enabled: string; clock_hz: number | null }>` (throws `DaemonError` with `.error`, `.detail`, `.status`); `export class DaemonError extends Error`; `export function designToProject(d: FpgaDesign, index: number): Project`.
 
 - [ ] **Step 1: Failing tests** — `src/model/fpgaDesigns.spec.ts`:
+
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shuttle } from './shuttle';
@@ -63,12 +66,39 @@ import {
 } from './fpgaDesigns';
 
 const designs = [
-  { name: 'my_upload', title: '', author: '', description: '', docs_url: '', repo_url: '', clock_hz: null, pinout: {}, source: 'upload' },
-  { name: 'tt_um_demo_a', title: 'Demo A', author: 'fpgas.online', description: 'First demo', docs_url: 'https://example.org/a', repo_url: 'https://github.com/fpgas-online/tinytapeout-fpga-demos', clock_hz: 1000, pinout: { ui_in: ['a0','a1','a2','a3','a4','a5','a6','a7'], uo_out: ['o0','o1','o2','o3','o4','o5','o6','o7'], uio: ['','','','','','','',''] }, source: 'demo' },
+  {
+    name: 'my_upload',
+    title: '',
+    author: '',
+    description: '',
+    docs_url: '',
+    repo_url: '',
+    clock_hz: null,
+    pinout: {},
+    source: 'upload',
+  },
+  {
+    name: 'tt_um_demo_a',
+    title: 'Demo A',
+    author: 'fpgas.online',
+    description: 'First demo',
+    docs_url: 'https://example.org/a',
+    repo_url: 'https://github.com/fpgas-online/tinytapeout-fpga-demos',
+    clock_hz: 1000,
+    pinout: {
+      ui_in: ['a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'],
+      uo_out: ['o0', 'o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7'],
+      uio: ['', '', '', '', '', '', '', ''],
+    },
+    source: 'demo',
+  },
 ];
 
 function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -76,8 +106,21 @@ afterEach(() => vi.unstubAllGlobals());
 describe('designToProject', () => {
   it('maps daemon designs onto shuttle projects (address = list index)', () => {
     const p = designToProject(designs[1] as never, 1);
-    expect(p).toMatchObject({ macro: 'tt_um_demo_a', address: 1, title: 'Demo A', author: 'fpgas.online', clock_hz: 1000, danger_level: 'safe', type: 'project', commit: '', repo: 'https://github.com/fpgas-online/tinytapeout-fpga-demos' });
-    expect(designToProject(designs[0] as never, 0)).toMatchObject({ title: 'my_upload', clock_hz: 0 });
+    expect(p).toMatchObject({
+      macro: 'tt_um_demo_a',
+      address: 1,
+      title: 'Demo A',
+      author: 'fpgas.online',
+      clock_hz: 1000,
+      danger_level: 'safe',
+      type: 'project',
+      commit: '',
+      repo: 'https://github.com/fpgas-online/tinytapeout-fpga-demos',
+    });
+    expect(designToProject(designs[0] as never, 0)).toMatchObject({
+      title: 'my_upload',
+      clock_hz: 0,
+    });
   });
 });
 
@@ -89,14 +132,20 @@ describe('loadFpgaDesigns', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/board/fpga-1/designs', expect.anything());
     expect(shuttle.id).toBe('FPGA');
     expect(shuttle.loading).toBe(false);
-    expect(shuttle.projects.map((p) => [p.macro, p.address])).toEqual([['my_upload', 0], ['tt_um_demo_a', 1]]);
+    expect(shuttle.projects.map((p) => [p.macro, p.address])).toEqual([
+      ['my_upload', 0],
+      ['tt_um_demo_a', 1],
+    ]);
     expect(fpgaDesigns.enabled).toBe('tt_um_demo_a');
     expect(fpgaDesigns.byName.tt_um_demo_a.pinout.uo_out[0]).toBe('o0');
     expect(fpgaDesigns.error).toBeNull();
   });
 
   it('records an error and leaves projects empty when the daemon answers an error JSON', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'board not present', detail: '' }, 503)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'board not present', detail: '' }, 503)),
+    );
     await loadFpgaDesigns('/api/board/fpga-1');
     expect(shuttle.projects).toEqual([]);
     expect(shuttle.loading).toBe(false);
@@ -108,7 +157,10 @@ describe('enableFpgaDesign', () => {
   it('POSTs the clock and returns the daemon body', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ enabled: 'tt_um_demo_a', clock_hz: 1000 }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(enableFpgaDesign('/api/board/fpga-1', 'tt_um_demo_a', 1000)).resolves.toEqual({ enabled: 'tt_um_demo_a', clock_hz: 1000 });
+    await expect(enableFpgaDesign('/api/board/fpga-1', 'tt_um_demo_a', 1000)).resolves.toEqual({
+      enabled: 'tt_um_demo_a',
+      clock_hz: 1000,
+    });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/board/fpga-1/designs/tt_um_demo_a/enable');
     expect(init.method).toBe('POST');
@@ -116,8 +168,15 @@ describe('enableFpgaDesign', () => {
   });
 
   it('throws DaemonError with the daemon message and detail', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'REPL task failed', detail: 'someone typed' }, 502)));
-    await expect(enableFpgaDesign('/api/board/fpga-1', 'x')).rejects.toMatchObject({ error: 'REPL task failed', detail: 'someone typed', status: 502 } satisfies Partial<DaemonError>);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'REPL task failed', detail: 'someone typed' }, 502)),
+    );
+    await expect(enableFpgaDesign('/api/board/fpga-1', 'x')).rejects.toMatchObject({
+      error: 'REPL task failed',
+      detail: 'someone typed',
+      status: 502,
+    } satisfies Partial<DaemonError>);
   });
 });
 ```
@@ -125,6 +184,7 @@ describe('enableFpgaDesign', () => {
 - [ ] **Step 2: Run to verify failure** — `npx vitest run src/model/fpgaDesigns.spec.ts` → cannot resolve `./fpgaDesigns`.
 
 - [ ] **Step 3: Implement** — `src/model/fpgaDesigns.ts`:
+
 ```ts
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026, fpgas.online contributors
@@ -196,7 +256,9 @@ export async function loadFpgaDesigns(apiBase: string): Promise<void> {
   updateFpgaDesigns({ loading: true, error: null });
   updateShuttle({ id: 'FPGA', projects: [], loading: true });
   try {
-    const body = await daemonJson<{ enabled: string | null; designs: FpgaDesign[] }>(`${apiBase}/designs`);
+    const body = await daemonJson<{ enabled: string | null; designs: FpgaDesign[] }>(
+      `${apiBase}/designs`,
+    );
     const byName: Record<string, FpgaDesign> = {};
     body.designs.forEach((d) => (byName[d.name] = d));
     updateFpgaDesigns({ enabled: body.enabled, byName, error: null });
@@ -219,6 +281,7 @@ export async function enableFpgaDesign(apiBase: string, name: string, clockHz?: 
   return result;
 }
 ```
+
 (If `Project.danger_level`/`type` fields are typed as optional unions in `shuttle.ts`, the literals above satisfy them; the existing `loadShuttle` stays untouched.)
 
 - [ ] **Step 4: Run** — `npx vitest run src/model/fpgaDesigns.spec.ts`, `npm run typecheck`, `npm run lint`.
@@ -229,19 +292,24 @@ export async function enableFpgaDesign(apiBase: string, name: string, clockHz?: 
 ### Task 2: Device + Config tab branches for `fpga`
 
 **Files:**
+
 - Modify: `src/ttcontrol/TTBoardDevice.ts`, `src/components/BoardConfigPanel.tsx`, `src/model/firmware.ts`
 - Test: `src/ttcontrol/TTBoardDevice.spec.ts` (append), `src/model/firmware.spec.ts` (append)
 
 **Interfaces:**
+
 - Consumes: `boardInfo` (`~/model/board`), `loadFpgaDesigns`, `enableFpgaDesign`, `fpgaDesigns`.
 - Produces: `TTBoardDevice.selectDesign(design, clockHz)` → for `fpga`: `enableFpgaDesign(boardInfo.apiBase!, project.macro, clockHz)` then `updateDeviceState({ selectedDesign: design.address, selectedSubtile: null })`; `TTBoardDevice.lastDesignError: string | null` signal-ish via `setData('designError', …)` (add `designError: string | null` to the device `data` store, default `null`); `safeCompareVersions(a, b): number` in `firmware.ts` (returns `compareVersions` or treats an unparseable side as `0.0.0`).
 
 - [ ] **Step 1: Failing tests** — append to `src/ttcontrol/TTBoardDevice.spec.ts` (follow that file's existing fake-transport helpers; if it has none for writes, use the pattern from the `WebSocketTransport.spec.ts` FakeWebSocket):
+
 ```ts
 describe('fpga kind', () => {
   it('loads designs from the daemon when the ROM says shuttle=FPGA', async () => {
     setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ enabled: null, designs: [] }), { status: 200 }));
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ enabled: null, designs: [] }), { status: 200 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const device = makeDevice(); // the spec file's existing helper that builds a TTBoardDevice on a fake transport
     device.processInput('shuttle=FPGA');
@@ -253,8 +321,30 @@ describe('fpga kind', () => {
 
   it('selectDesign enables through the daemon instead of select_design()', async () => {
     setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
-    updateShuttle({ id: 'FPGA', loading: false, projects: [designToProject({ name: 'tt_um_demo_a', title: 'Demo A', author: '', description: '', docs_url: '', repo_url: '', clock_hz: 1000, pinout: {}, source: 'demo' }, 0)] });
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ enabled: 'tt_um_demo_a', clock_hz: 1000 }), { status: 200 }));
+    updateShuttle({
+      id: 'FPGA',
+      loading: false,
+      projects: [
+        designToProject(
+          {
+            name: 'tt_um_demo_a',
+            title: 'Demo A',
+            author: '',
+            description: '',
+            docs_url: '',
+            repo_url: '',
+            clock_hz: 1000,
+            pinout: {},
+            source: 'demo',
+          },
+          0,
+        ),
+      ],
+    });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ enabled: 'tt_um_demo_a', clock_hz: 1000 }), { status: 200 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const { device, written } = makeDeviceCapturingWrites();
     await device.selectDesign({ address: 0, subtile: null }, 1000);
@@ -267,7 +357,15 @@ describe('fpga kind', () => {
 
   it('records a daemon error on the device instead of throwing', async () => {
     setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'another task is running', detail: '' }), { status: 409 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'another task is running', detail: '' }), {
+            status: 409,
+          }),
+      ),
+    );
     const { device } = makeDeviceCapturingWrites();
     await device.selectDesign({ address: 0, subtile: null });
     expect(device.data.designError).toContain('another task is running');
@@ -276,7 +374,9 @@ describe('fpga kind', () => {
   });
 });
 ```
+
 and to `src/model/firmware.spec.ts`:
+
 ```ts
 describe('safeCompareVersions', () => {
   it('treats an unparseable version as 0.0.0 instead of throwing', () => {
@@ -286,16 +386,25 @@ describe('safeCompareVersions', () => {
   });
 });
 ```
+
 If `TTBoardDevice.spec.ts` lacks a write-capturing helper, add `makeDeviceCapturingWrites()` there: a `SerialTransport` double whose `writable` is a `WritableStream` pushing decoded chunks into `written: string[]` and whose `readable` never yields.
 
 - [ ] **Step 2: Run to verify failure** — `npx vitest run src/ttcontrol src/model/firmware.spec.ts`.
 
 - [ ] **Step 3: Implement**
-  - `firmware.ts`: 
+
+  - `firmware.ts`:
     ```ts
     /** compareVersions that never throws: an unparseable side counts as 0.0.0. */
     export function safeCompareVersions(a: string, b: string): number {
-      const norm = (v: string) => { try { parseFirmwareVersion(v); return v; } catch { return '0.0.0'; } };
+      const norm = (v: string) => {
+        try {
+          parseFirmwareVersion(v);
+          return v;
+        } catch {
+          return '0.0.0';
+        }
+      };
       return compareVersions(norm(a), norm(b));
     }
     ```
@@ -331,9 +440,11 @@ If `TTBoardDevice.spec.ts` lacks a write-capturing helper, add `makeDeviceCaptur
 ### Task 3: Pinout tab from design metadata
 
 **Files:**
+
 - Modify: `src/components/PinoutPanel.tsx`
 
-- [ ] **Step 1: Implement** — at the top of the resource: 
+- [ ] **Step 1: Implement** — at the top of the resource:
+
 ```ts
 if (boardInfo.kind === 'fpga') {
   const d = project ? fpgaDesigns.byName[project.macro] : undefined;
@@ -346,7 +457,9 @@ if (boardInfo.kind === 'fpga') {
   return { macro: d.name, author: d.author, description: d.description, pinout, analog_pins: [] };
 }
 ```
+
 (imports `boardInfo`, `fpgaDesigns`). No network call for `fpga`. Add a vitest `src/components/PinoutPanel.spec.tsx`? — the repo has `EmbedApp.spec.tsx` using `@solidjs/testing-library`; if that dependency exists, add one render test asserting the labels `a0`/`o0` appear for an fpga design; otherwise skip the component test and cover the mapping by extracting it to `export function pinoutFromDesign(d: FpgaDesign): Record<string, string>` in `fpgaDesigns.ts` with a unit test there (preferred: do this regardless, and have PinoutPanel call it).
+
 - [ ] **Step 2: Run** — `npx vitest run`, `npm run typecheck`, `npm run lint`.
 - [ ] **Step 3: Commit** — `feat(fpga): pinout tab from the design metadata` + trailer.
 
@@ -355,6 +468,7 @@ if (boardInfo.kind === 'fpga') {
 ### Task 4: `refreshDesigns()` handle + issue #7 hardening
 
 **Files:**
+
 - Modify: `src/components/EmbedApp.tsx`, `src/embed.tsx`, `src/components/EmbedApp.spec.tsx`
 
 - [ ] **Step 1: Failing test** — append to `EmbedApp.spec.tsx` (using its existing FakeWebSocket harness): `mountCommander(...).refreshDesigns` is a function; for `kind: 'asic'` it resolves without fetching; for `kind: 'fpga'` with `apiBase` it calls `fetch('/api/board/fpga-1/designs', …)`. Plus: when the FakeWebSocket's reader errors mid-session (simulate the reader throwing), the carrier is closed (`FakeWebSocket.close` called) before the reconnect is scheduled.
