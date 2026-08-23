@@ -2,9 +2,17 @@
 // Copyright (C) 2024, Tiny Tapeout LTD
 
 import { createStore } from 'solid-js/store';
+import { boardInfo } from '~/model/board';
 import { updateDeviceState } from '~/model/DeviceState';
 import { compareVersions, parseFirmwareVersion } from '~/model/firmware';
-import { DesignAddress, formatDesignAddress, loadShuttle } from '~/model/shuttle';
+import { DaemonError, enableFpgaDesign, loadFpgaDesigns } from '~/model/fpgaDesigns';
+import {
+  DesignAddress,
+  findProject,
+  formatDesignAddress,
+  loadShuttle,
+  shuttle,
+} from '~/model/shuttle';
 import type { SerialTransport } from '~/transport/SerialTransport';
 import { LineBreakTransformer } from '~/utils/LineBreakTransformer';
 import ttControl from './ttcontrol.py?raw';
@@ -70,6 +78,8 @@ export class TTBoardDevice extends EventTarget {
       romCommit: null as string | null,
       logs: [] as ILogEntry[],
       factoryTest: { status: 'idle', message: '' } as IFactoryTestState,
+      /** Last failure reported by the FPGA daemon, shown in the Config tab. */
+      designError: null as string | null,
     });
     this.data = data;
     this.setData = setData;
@@ -94,13 +104,44 @@ export class TTBoardDevice extends EventTarget {
     await this.sendCommand('dump_state()');
   }
 
+  /** Dismisses the daemon error banner. */
+  clearDesignError() {
+    this.setData('designError', null);
+  }
+
   async selectDesign(design: DesignAddress, clockHz?: number) {
+    if (boardInfo.kind === 'fpga' && boardInfo.apiBase) {
+      await this.selectFpgaDesign(boardInfo.apiBase, design, clockHz);
+      return;
+    }
     const clockArg = clockHz != null ? `, ${clockHz}` : '';
     // Subtile projects share their group's mux address, and are selected by the
     // "<address>-<subtile>" string form (firmware 3.1.0 and above).
     const designArg =
       design.subtile != null ? `"${formatDesignAddress(design)}"` : `${design.address}`;
     await this.sendCommand(`select_design(${designArg}${clockArg})`);
+  }
+
+  /**
+   * FPGA boards have no mux to select on: the Pi daemon reprograms the FPGA
+   * with the chosen design instead. Failures are surfaced on the device rather
+   * than thrown, so the Config tab can show them.
+   */
+  private async selectFpgaDesign(apiBase: string, design: DesignAddress, clockHz?: number) {
+    this.setData('designError', null);
+    const project = findProject(shuttle.projects, design);
+    if (!project) {
+      this.setData('designError', `No design at index ${design.address}`);
+      return;
+    }
+    this.addLogEntry({ text: `<<< load design ${project.macro} via daemon >>>`, sent: true });
+    try {
+      await enableFpgaDesign(apiBase, project.macro, clockHz);
+      updateDeviceState({ selectedDesign: design.address, selectedSubtile: null });
+    } catch (e) {
+      // A daemon rejection arrives as DaemonError; a dead network as a TypeError.
+      this.setData('designError', e instanceof DaemonError ? e.message : String(e));
+    }
   }
 
   async setClock(hz: number) {
@@ -212,7 +253,12 @@ export class TTBoardDevice extends EventTarget {
 
       case 'shuttle':
         this.setData('shuttle', value);
-        loadShuttle(value);
+        if (boardInfo.kind === 'fpga' && boardInfo.apiBase) {
+          // FPGA boards have no shuttle index; their designs come from the Pi daemon.
+          void loadFpgaDesigns(boardInfo.apiBase);
+        } else {
+          loadShuttle(value);
+        }
         break;
 
       case 'commit':

@@ -7,6 +7,7 @@ import {
   Warning,
 } from '@suid/icons-material';
 import {
+  Alert,
   Button,
   Chip,
   FormControl,
@@ -17,9 +18,10 @@ import {
   TextField,
 } from '@suid/material';
 import { For, Show } from 'solid-js';
+import { boardInfo } from '~/model/board';
 import { deviceState, selectedDesignAddress, updateDeviceState } from '~/model/DeviceState';
 import { isFactoryMode } from '~/model/factory';
-import { compareVersions, subtileFirmwareVersion } from '~/model/firmware';
+import { safeCompareVersions, subtileFirmwareVersion } from '~/model/firmware';
 import {
   DesignAddress,
   findProject,
@@ -37,8 +39,13 @@ export interface IBoardConfigPanelProps {
 }
 
 export function BoardConfigPanel(props: IBoardConfigPanelProps) {
+  /** FPGA boards have no mux index and no subtiles: the daemon loads designs by name. */
+  const isFpga = () => boardInfo.kind === 'fpga';
+
   const maxClockFreq = () =>
-    compareVersions(props.device.data.version ?? '0.0.0', '2.0.4') >= 0 ? 100_000_000 : 66_500_000;
+    safeCompareVersions(props.device.data.version ?? '0.0.0', '2.0.4') >= 0
+      ? 100_000_000
+      : 66_500_000;
   const setClock = () => {
     void props.device.setClock(deviceState.clockHz);
   };
@@ -51,7 +58,7 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
   const subtileSelected = () => deviceState.selectedSubtile != null;
   const subtileUnsupported = () =>
     subtileSelected() &&
-    compareVersions(props.device.data.version ?? '0.0.0', subtileFirmwareVersion) < 0;
+    safeCompareVersions(props.device.data.version ?? '0.0.0', subtileFirmwareVersion) < 0;
 
   const selectDisabledReason = () =>
     subtileUnsupported()
@@ -125,17 +132,19 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
           </Show>
         </FormControl>
 
-        <TextField
-          sx={{ maxWidth: 80 }}
-          label="Index"
-          type="number"
-          size="small"
-          value={deviceState.selectedDesign}
-          InputProps={{ inputProps: { min: 0, max: 1023 } }}
-          fullWidth
-          onChange={(e) => setSelectedIndex((e.target as HTMLInputElement).valueAsNumber)}
-        />
-        <Show when={subtileSelected()}>
+        <Show when={!isFpga()}>
+          <TextField
+            sx={{ maxWidth: 80 }}
+            label="Index"
+            type="number"
+            size="small"
+            value={deviceState.selectedDesign}
+            InputProps={{ inputProps: { min: 0, max: 1023 } }}
+            fullWidth
+            onChange={(e) => setSelectedIndex((e.target as HTMLInputElement).valueAsNumber)}
+          />
+        </Show>
+        <Show when={subtileSelected() && !isFpga()}>
           <TextField
             sx={{ maxWidth: 80 }}
             label="Subtile"
@@ -158,7 +167,7 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
           disabled={dangerLevel() === 'high' || subtileUnsupported()}
           title={selectDisabledReason()}
         >
-          Select
+          {isFpga() ? 'Load design' : 'Select'}
         </Button>
         <Show when={subtileUnsupported() && dangerLevel() !== 'high'}>
           <span title={selectDisabledReason()}>
@@ -176,6 +185,18 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
           </span>
         </Show>
       </Stack>
+
+      <Show when={props.device.data.designError}>
+        {(message) => (
+          <Alert
+            severity="error"
+            sx={{ marginBottom: 2 }}
+            onClose={() => props.device.clearDesignError()}
+          >
+            {message()}
+          </Alert>
+        )}
+      </Show>
 
       <Stack direction="row" spacing={1} marginBottom={1}>
         <TextField

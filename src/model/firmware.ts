@@ -114,3 +114,20 @@ export function isLatestFirmwareVersion(version: string) {
   const latest = latestFirmwareVersionForDevice(version);
   return compareVersions(version, latest) >= 0;
 }
+
+/**
+ * `compareVersions` that never throws: a version string it can't parse (the
+ * firmware reports `unknown`, and FPGA boards have no firmware version at all)
+ * counts as `0.0.0`, so render-time comparisons can't crash the UI.
+ */
+export function safeCompareVersions(a: string, b: string) {
+  const norm = (version: string) => {
+    try {
+      parseFirmwareVersion(version);
+      return version;
+    } catch {
+      return '0.0.0';
+    }
+  };
+  return compareVersions(norm(a), norm(b));
+}
