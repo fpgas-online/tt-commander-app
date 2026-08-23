@@ -10,6 +10,7 @@ import { Header } from '~/components/Header';
 import { backoffDelay } from '~/model/backoff';
 import { setBoardInfo, type BoardInfo } from '~/model/board';
 import { compareVersions, minimumFirmwareVersion } from '~/model/firmware';
+import { loadFpgaDesigns } from '~/model/fpgaDesigns';
 import type { SerialTransport } from '~/transport/SerialTransport';
 import { WebSocketTransport } from '~/transport/WebSocketTransport';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
@@ -133,6 +134,12 @@ export function EmbedApp(props: { options: EmbedOptions }) {
       // carrier's 'close' drives the reconnect, so just report it.
       dev.start().catch((e: unknown) => console.warn('tt-commander: start failed', e));
     } catch (e) {
+      // The carrier may already be open — makeTransport() only rejects after
+      // assigning `transport`, and everything after it can throw too. Close it
+      // and claim its teardown, or the retry leaves a live socket behind and
+      // its later 'close' schedules a second, competing retry (#7).
+      closeHandled = true;
+      void transport?.close().catch(() => {});
       scheduleReconnect((e as Error).message);
     }
   };
@@ -154,7 +161,16 @@ export function EmbedApp(props: { options: EmbedOptions }) {
     })();
   };
 
-  onMount(() => void connect());
+  onMount(() => {
+    // The design list is daemon state, not REPL state: fetch it up front so the
+    // Config tab is usable even while the board's REPL is silent. The ROM's
+    // `shuttle=` line refreshes it on every connect.
+    const { board, apiBase } = props.options;
+    if (board.kind === 'fpga' && apiBase) {
+      void loadFpgaDesigns(apiBase);
+    }
+    void connect();
+  });
   onCleanup(() => {
     disposed = true;
     closeHandled = true;

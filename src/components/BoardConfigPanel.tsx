@@ -17,11 +17,12 @@ import {
   Stack,
   TextField,
 } from '@suid/material';
-import { For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { boardInfo } from '~/model/board';
 import { deviceState, selectedDesignAddress, updateDeviceState } from '~/model/DeviceState';
 import { isFactoryMode } from '~/model/factory';
 import { safeCompareVersions, subtileFirmwareVersion } from '~/model/firmware';
+import { fpgaDesigns, loadFpgaDesigns } from '~/model/fpgaDesigns';
 import {
   DesignAddress,
   findProject,
@@ -32,6 +33,7 @@ import {
 } from '~/model/shuttle';
 import { frequencyTable, TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { GitHubIcon } from './GitHubIcon';
+import { LoadingButton } from './LoadingButton';
 import { ProjectSelect } from './ProjectSelect';
 
 export interface IBoardConfigPanelProps {
@@ -48,6 +50,28 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
       : 66_500_000;
   const setClock = () => {
     void props.device.setClock(deviceState.clockHz);
+  };
+
+  // Loading a design on an FPGA board is a multi-second daemon round trip, not
+  // a REPL write: hold the button until it lands so it can't be fired twice.
+  const [selecting, setSelecting] = createSignal(false);
+  const selectDesign = () => {
+    if (deviceState.uiIn.length > 0) {
+      void props.device.writeUIIn(0);
+      updateDeviceState({ uiIn: [] });
+    }
+    setSelecting(true);
+    void props.device
+      .selectDesign(selectedDesignAddress(), selectedProject()?.clock_hz)
+      .finally(() => setSelecting(false));
+  };
+
+  /** Re-runs GET /designs after the daemon failed to answer it. */
+  const retryLoadDesigns = () => {
+    const apiBase = boardInfo.apiBase;
+    if (apiBase) {
+      void loadFpgaDesigns(apiBase);
+    }
   };
 
   const selectedProject = () => findProject(shuttle.projects, selectedDesignAddress());
@@ -96,13 +120,27 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
 
   const projectLinks = () => {
     const project = selectedProject();
-    return project
-      ? {
-          repo: `${project.repo}/tree/${project.commit}`,
-          docs: `https://tinytapeout.com/chips/${shuttle.id}/${project.macro}`,
-          feedback: `https://app.tinytapeout.com/shuttles/${shuttle.id}/${project.macro}/feedback`,
-        }
-      : null;
+    if (!project) {
+      return null;
+    }
+    if (isFpga()) {
+      // An FPGA design is not a shuttle project: it has no tinytapeout.com chip
+      // page and no feedback form, only the URLs the daemon reports (either of
+      // which may be empty, e.g. for an upload).
+      const design = fpgaDesigns.byName[project.macro];
+      return { repo: design?.repo_url ?? '', docs: design?.docs_url ?? '', feedback: '' };
+    }
+    return {
+      repo: `${project.repo}/tree/${project.commit}`,
+      docs: `https://tinytapeout.com/chips/${shuttle.id}/${project.macro}`,
+      feedback: `https://app.tinytapeout.com/shuttles/${shuttle.id}/${project.macro}/feedback`,
+    };
+  };
+
+  /** The links row, or null when this design has no links worth a row. */
+  const anyProjectLink = () => {
+    const links = projectLinks();
+    return links && (links.repo || links.docs || links.feedback) ? links : null;
   };
 
   return (
@@ -155,20 +193,15 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
             fullWidth
           />
         </Show>
-        <Button
-          onClick={() => {
-            if (deviceState.uiIn.length > 0) {
-              void props.device.writeUIIn(0);
-              updateDeviceState({ uiIn: [] });
-            }
-            props.device.selectDesign(selectedDesignAddress(), selectedProject()?.clock_hz);
-          }}
+        <LoadingButton
+          onClick={selectDesign}
+          loading={selecting()}
           variant="contained"
           disabled={dangerLevel() === 'high' || subtileUnsupported()}
           title={selectDisabledReason()}
         >
           {isFpga() ? 'Load design' : 'Select'}
-        </Button>
+        </LoadingButton>
         <Show when={subtileUnsupported() && dangerLevel() !== 'high'}>
           <span title={selectDisabledReason()}>
             <Error color="error" fontSize="large" sx={{ marginLeft: 0.5 }} />
@@ -185,6 +218,22 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
           </span>
         </Show>
       </Stack>
+
+      <Show when={isFpga() && fpgaDesigns.error}>
+        {(message) => (
+          <Alert
+            severity="error"
+            sx={{ marginBottom: 2 }}
+            action={
+              <Button color="inherit" size="small" onClick={retryLoadDesigns}>
+                Retry
+              </Button>
+            }
+          >
+            Could not load the design list: {message()}
+          </Alert>
+        )}
+      </Show>
 
       <Show when={props.device.data.designError}>
         {(message) => (
@@ -276,30 +325,36 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
         </Show>
       </Stack>
 
-      <Show when={projectLinks()}>
+      <Show when={anyProjectLink()}>
         {(projectLinks) => (
           <Stack my={1} direction="row" spacing={1}>
-            <Button
-              component="a"
-              sx={{ backgroundColor: 'yellow' }}
-              href={projectLinks().feedback}
-              target="_blank"
-              variant="outlined"
-              startIcon={<FactCheck />}
-            >
-              Report results
-            </Button>
-            <Button component="a" startIcon={<Info />} href={projectLinks().docs} target="_blank">
-              Project docs
-            </Button>
-            <Button
-              component="a"
-              startIcon={<GitHubIcon />}
-              href={projectLinks().repo}
-              target="_blank"
-            >
-              Repo
-            </Button>
+            <Show when={projectLinks().feedback}>
+              <Button
+                component="a"
+                sx={{ backgroundColor: 'yellow' }}
+                href={projectLinks().feedback}
+                target="_blank"
+                variant="outlined"
+                startIcon={<FactCheck />}
+              >
+                Report results
+              </Button>
+            </Show>
+            <Show when={projectLinks().docs}>
+              <Button component="a" startIcon={<Info />} href={projectLinks().docs} target="_blank">
+                Project docs
+              </Button>
+            </Show>
+            <Show when={projectLinks().repo}>
+              <Button
+                component="a"
+                startIcon={<GitHubIcon />}
+                href={projectLinks().repo}
+                target="_blank"
+              >
+                Repo
+              </Button>
+            </Show>
           </Stack>
         )}
       </Show>

@@ -7,6 +7,29 @@ import { mountCommander } from '~/embed';
 import { FakeWebSocket } from '~/transport/testing/FakeWebSocket';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 
+// jsdom has no canvas and xterm asks for a 2d context — at import time, and
+// again while rendering — which jsdom reports on its virtual console, out of
+// reach of a console spy. vi.hoisted() runs before the imports below, which is
+// the only point early enough to head the first one off.
+vi.hoisted(() => {
+  const context = {
+    fillStyle: '',
+    fillRect: () => {},
+    getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+  };
+  HTMLCanvasElement.prototype.getContext = (() =>
+    context) as unknown as HTMLCanvasElement['getContext'];
+});
+
+/**
+ * Expected noise, not a signal: the widget logs a warning whenever a carrier
+ * dies mid-bootstrap, and several tests kill one deliberately. Silencing it
+ * keeps a green run's output empty, so real output stands out.
+ */
+beforeEach(() => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
 /** Let queued promise jobs run while fake timers are installed. */
 async function flush(times = 8) {
   for (let i = 0; i < times; i++) {
@@ -227,6 +250,124 @@ describe('mountCommander carrier teardown (#7)', () => {
     expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
 
     startSpy.mockRestore();
+    handle.unmount();
+    el.remove();
+  });
+});
+
+describe('mountCommander connect() failure teardown (#7)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWebSocket.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  test('closes the already-open carrier and schedules exactly one retry when connect() throws', async () => {
+    // Pin the jitter so the retry lands on exactly the nominal delay.
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    // A synchronous throw from start() escapes the `.catch()` on its result and
+    // lands in connect()'s catch, with the carrier already open — the case that
+    // used to leak the socket and let its later 'close' race a second retry.
+    vi.spyOn(TTBoardDevice.prototype, 'start').mockImplementation(() => {
+      throw new Error('bootstrap exploded');
+    });
+
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const handle = mountCommander(el, {
+      transport: {
+        kind: 'websocket',
+        url: 'ws://127.0.0.1:8765/serial',
+        WebSocketImpl: FakeWebSocket.asImpl(),
+      },
+      board: { slug: 'tt06', kind: 'asic', shuttle: 'tt06' },
+    });
+
+    const socket = FakeWebSocket.last;
+    const closeSpy = vi.spyOn(socket, 'close');
+    socket.serverOpen();
+    await flush();
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(el.textContent).toMatch(/bootstrap exploded/);
+
+    // One retry, not two: the leaked socket's own 'close' must not schedule a
+    // competing one on top of the catch's.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    handle.unmount();
+    el.remove();
+  });
+});
+
+describe('mountCommander design list on mount', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWebSocket.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  test('fetches the fpga design list even when the carrier never answers', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ enabled: null, designs: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    // No serverOpen(): the socket stays CONNECTING, so nothing the REPL would
+    // have said (including the ROM's `shuttle=` line) ever arrives.
+    const handle = mountCommander(el, {
+      transport: {
+        kind: 'websocket',
+        url: 'ws://127.0.0.1:8765/serial',
+        WebSocketImpl: FakeWebSocket.asImpl(),
+      },
+      board: { slug: 'fpga-1', kind: 'fpga' },
+      apiBase: '/api/board/fpga-1',
+    });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/board/fpga-1/designs', expect.anything());
+
+    handle.unmount();
+    el.remove();
+  });
+
+  test('does not fetch a design list for an asic board', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const handle = mountCommander(el, {
+      transport: {
+        kind: 'websocket',
+        url: 'ws://127.0.0.1:8765/serial',
+        WebSocketImpl: FakeWebSocket.asImpl(),
+      },
+      board: { slug: 'tt06', kind: 'asic', shuttle: 'tt06' },
+      apiBase: '/api/board/tt06',
+    });
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
     handle.unmount();
     el.remove();
   });

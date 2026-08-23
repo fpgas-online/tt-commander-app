@@ -2,7 +2,8 @@
 // Copyright (C) 2026, fpgas.online contributors
 
 import { createStore } from 'solid-js/store';
-import { Project, updateShuttle } from './shuttle';
+import { updateDeviceState } from './DeviceState';
+import { Project, shuttle, updateShuttle } from './shuttle';
 
 /** One design on an FPGA emulation board, as reported by the Pi daemon's GET /designs. */
 export interface FpgaDesign {
@@ -62,8 +63,16 @@ export function designToProject(d: FpgaDesign, index: number): Project {
   };
 }
 
+/** `/api/board/x/` and `/api/board/x` must build the same URLs. */
+function normaliseApiBase(apiBase: string) {
+  return apiBase.replace(/\/+$/, '');
+}
+
 async function daemonJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { headers: { Accept: 'application/json' }, ...init });
+  const response = await fetch(url, {
+    ...init,
+    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+  });
   let body: unknown = null;
   try {
     body = await response.json();
@@ -77,18 +86,38 @@ async function daemonJson<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/**
+ * Point the UI's selection at the design the daemon says is enabled.
+ *
+ * An FPGA design's "address" is only its position in the daemon's list, which
+ * is ordered by name — uploading a design early in the alphabet shifts every
+ * index after it. The enabled *name* is the stable identity, so the selection
+ * is re-derived from it after every load and every enable, and the REPL's
+ * `tt.design=` lines (which report the ASIC mux, meaningless here) are ignored.
+ */
+function syncSelectionToEnabled(enabled: string | null) {
+  if (!enabled) {
+    return;
+  }
+  const project = shuttle.projects.find((p) => p.macro === enabled);
+  if (project) {
+    updateDeviceState({ selectedDesign: project.address, selectedSubtile: null });
+  }
+}
+
 /** Replace the shuttle project list with the daemon's designs (FPGA boards only). */
 export async function loadFpgaDesigns(apiBase: string): Promise<void> {
   updateFpgaDesigns({ loading: true, error: null });
   updateShuttle({ id: 'FPGA', projects: [], loading: true });
   try {
     const body = await daemonJson<{ enabled: string | null; designs: FpgaDesign[] }>(
-      `${apiBase}/designs`,
+      `${normaliseApiBase(apiBase)}/designs`,
     );
     const byName: Record<string, FpgaDesign> = {};
     body.designs.forEach((d) => (byName[d.name] = d));
     updateFpgaDesigns({ enabled: body.enabled, byName, error: null });
     updateShuttle({ projects: body.designs.map(designToProject) });
+    syncSelectionToEnabled(body.enabled);
   } catch (e) {
     updateFpgaDesigns({ error: e instanceof Error ? e.message : String(e) });
   } finally {
@@ -98,11 +127,14 @@ export async function loadFpgaDesigns(apiBase: string): Promise<void> {
 }
 
 export async function enableFpgaDesign(apiBase: string, name: string, clockHz?: number) {
-  const body = clockHz != null ? { clock_hz: clockHz } : {};
+  // The daemon reads a missing clock_hz as "no clock override"; a 0 would ask
+  // it for a 0 Hz clock, so only send a usable frequency.
+  const body = clockHz ? { clock_hz: clockHz } : {};
   const result = await daemonJson<{ enabled: string; clock_hz: number | null }>(
-    `${apiBase}/designs/${encodeURIComponent(name)}/enable`,
+    `${normaliseApiBase(apiBase)}/designs/${encodeURIComponent(name)}/enable`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
   );
   updateFpgaDesigns({ enabled: result.enabled });
+  syncSelectionToEnabled(result.enabled);
   return result;
 }

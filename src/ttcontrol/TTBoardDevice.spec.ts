@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { setBoardInfo } from '~/model/board';
-import { deviceState } from '~/model/DeviceState';
+import { deviceState, updateDeviceState } from '~/model/DeviceState';
 import { designToProject, FpgaDesign } from '~/model/fpgaDesigns';
 import { updateShuttle } from '~/model/shuttle';
 import type { SerialTransport, TransportState } from '~/transport/SerialTransport';
@@ -117,7 +117,9 @@ const demoA: FpgaDesign = {
 
 describe('TTBoardDevice.run', () => {
   test('stops looping when the transport lost its readable after an error', async () => {
+    // Both are the expected report of the carrier dying, not a signal.
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
     const transport = new NullAfterErrorTransport();
     const device = new TTBoardDevice(transport);
     const closed = vi.fn();
@@ -225,6 +227,21 @@ describe('fpga kind', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("ignores the REPL's tt.design/tt.subtile, which report the ASIC mux", () => {
+    // On an FPGA board the mux address is meaningless — the daemon's `enabled`
+    // design name drives the selection — and another viewer's select_design()
+    // must not drag this widget's dropdown to a bogus index.
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    updateDeviceState({ selectedDesign: 2, selectedSubtile: null });
+    const device = makeDevice();
+
+    processInput(device, 'tt.design=5');
+    processInput(device, 'tt.subtile=1');
+
+    expect(deviceState.selectedDesign).toBe(2);
+    expect(deviceState.selectedSubtile).toBeNull();
+  });
+
   test('clearDesignError() drops the recorded error', async () => {
     setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
     updateShuttle({ id: 'FPGA', loading: false, projects: [] });
@@ -255,6 +272,18 @@ describe('asic kind (unchanged behaviour)', () => {
     await flushWrites();
 
     expect(written.join('')).toContain('select_design("3-1")');
+  });
+
+  test('tt.design/tt.subtile still move the selection on an asic board', () => {
+    updateDeviceState({ selectedDesign: 0, selectedSubtile: null });
+    const device = makeDevice();
+
+    processInput(device, 'tt.design=5');
+    processInput(device, 'tt.subtile=1');
+
+    expect(deviceState.selectedDesign).toBe(5);
+    expect(deviceState.selectedSubtile).toBe(1);
+    updateDeviceState({ selectedDesign: 0, selectedSubtile: null });
   });
 
   test('shuttle= still loads the shuttle index for an asic board', async () => {

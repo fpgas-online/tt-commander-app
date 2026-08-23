@@ -10,7 +10,7 @@ import {
 import { createResource, For, Show } from 'solid-js';
 import { boardInfo } from '~/model/board';
 import { selectedDesignAddress } from '~/model/DeviceState';
-import { compareVersions } from '~/model/firmware';
+import { safeCompareVersions } from '~/model/firmware';
 import { fpgaDesigns, pinoutFromDesign } from '~/model/fpgaDesigns';
 import { findProject, Project, shuttle } from '~/model/shuttle';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
@@ -118,7 +118,7 @@ export function PinoutPanel(props: IPinoutPanelProps) {
         <AnalogPinoutTable
           analogPins={projectInfo()?.analog_pins ?? []}
           pinout={projectInfo()?.pinout ?? {}}
-          useLetterLabels={compareVersions(props.device.data.version ?? '0.0.0', '3.0.0') >= 0}
+          useLetterLabels={safeCompareVersions(props.device.data.version ?? '0.0.0', '3.0.0') >= 0}
         />
       </Show>
     </Stack>

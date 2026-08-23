@@ -136,8 +136,9 @@ export class TTBoardDevice extends EventTarget {
     }
     this.addLogEntry({ text: `<<< load design ${project.macro} via daemon >>>`, sent: true });
     try {
+      // enableFpgaDesign moves the selection to whatever the daemon reports as
+      // enabled, so nothing is updated optimistically here.
       await enableFpgaDesign(apiBase, project.macro, clockHz);
-      updateDeviceState({ selectedDesign: design.address, selectedSubtile: null });
     } catch (e) {
       // A daemon rejection arrives as DaemonError; a dead network as a TypeError.
       this.setData('designError', e instanceof DaemonError ? e.message : String(e));
@@ -236,11 +237,19 @@ export class TTBoardDevice extends EventTarget {
         updateDeviceState({ uoOutValue: parseInt(value, 10) });
         break;
 
+      // The REPL reports the ASIC mux address, which means nothing on an FPGA
+      // board: there the daemon's `enabled` design name drives the selection
+      // (see syncSelectionToEnabled in ~/model/fpgaDesigns).
       case 'tt.design':
-        updateDeviceState({ selectedDesign: parseInt(value, 10) });
+        if (boardInfo.kind !== 'fpga') {
+          updateDeviceState({ selectedDesign: parseInt(value, 10) });
+        }
         break;
 
       case 'tt.subtile': {
+        if (boardInfo.kind === 'fpga') {
+          break;
+        }
         // Reported as -1 (or NaN on a mangled line) when the design isn't a subtile.
         const subtile = parseInt(value, 10);
         updateDeviceState({ selectedSubtile: subtile >= 0 ? subtile : null });
