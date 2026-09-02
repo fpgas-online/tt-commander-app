@@ -12,6 +12,14 @@ import { ReplPanel } from './ReplPanel';
 
 export interface IBreakoutControlProps {
   device: TTBoardDevice;
+  /** Rendered inside a host page (no WebSerial): connection management is the embedder's. */
+  embedded?: boolean;
+  /**
+   * Shows Disconnect / Reset to Bootloader in embedded mode. On a shared
+   * remote board the bootloader takes the RP2040 offline until a human
+   * intervenes — and a tt03p5 must never be offered a 2.x firmware update.
+   */
+  admin?: boolean;
 }
 
 type ITabName = 'config' | 'interact' | 'pinout' | 'repl';
@@ -50,9 +58,11 @@ export function BoardCommander(props: IBreakoutControlProps) {
             Firmware: <strong>{props.device.data.version ?? '<unknown>'}</strong>
           </Typography>
         </Stack>
-        <Button onClick={disconnect} variant="outlined">
-          Disconnect
-        </Button>
+        <Show when={!props.embedded || props.admin}>
+          <Button onClick={disconnect} variant="outlined">
+            Disconnect
+          </Button>
+        </Show>
       </Stack>
 
       <Paper sx={{ padding: 1 }}>
@@ -98,11 +108,13 @@ export function BoardCommander(props: IBreakoutControlProps) {
 
       <DebugLogs logs={props.device.data.logs} />
 
-      <Stack marginTop={1} direction="row">
-        <Button onClick={() => props.device.bootloader()} variant="outlined">
-          Reset to Bootloader
-        </Button>
-      </Stack>
+      <Show when={!props.embedded || props.admin}>
+        <Stack marginTop={1} direction="row">
+          <Button onClick={() => props.device.bootloader()} variant="outlined">
+            Reset to Bootloader
+          </Button>
+        </Stack>
+      </Show>
     </Stack>
   );
 }
