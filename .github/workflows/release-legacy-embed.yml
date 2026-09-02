@@ -1,0 +1,48 @@
+name: Release legacy embed bundle
+
+on:
+  push:
+    tags: ['legacy-embed-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck && npx vitest run
+      - run: npm run build:embed
+      - name: Package
+        run: |
+          # Tag builds are released; a manual run just produces a dev tarball.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#legacy-embed-v}"
+          else
+            VERSION="0.0.0-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "${VERSION} $(git rev-parse --short HEAD)" > dist/embed/VERSION
+          tar -C dist/embed -czf "tt-commander-legacy-embed-${VERSION}.tar.gz" tt-commander-embed.js tt-commander-embed.js.map tt-commander-embed.css VERSION
+          sha256sum "tt-commander-legacy-embed-${VERSION}.tar.gz" > "tt-commander-legacy-embed-${VERSION}.tar.gz.sha256"
+      - name: Upload dev artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/legacy-embed-v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tt-commander-legacy-embed-dev
+          path: |
+            tt-commander-legacy-embed-*.tar.gz
+            tt-commander-legacy-embed-*.tar.gz.sha256
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/legacy-embed-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            tt-commander-legacy-embed-*.tar.gz
+            tt-commander-legacy-embed-*.tar.gz.sha256

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [legacy-fpgas-online, 'legacy-*']
+  pull_request:
+    branches: [legacy-fpgas-online, 'legacy-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      # No `npm run lint` here: the legacy branch keeps upstream's eslint 6
+      # setup, which predates the flat-config wrapper the fpgas-online branch
+      # uses. lint-staged still runs eslint on every commit locally.
+      - run: npm run typecheck
+      - run: npx vitest run
+      - run: npm run build
+      - run: npm run build:embed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tt-commander-legacy-embed
+          path: dist/embed/
