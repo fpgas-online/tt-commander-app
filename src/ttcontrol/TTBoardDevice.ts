@@ -4,6 +4,7 @@
 import { createStore } from 'solid-js/store';
 import { factoryShuttleId, isFactoryMode } from '~/model/factory';
 import { loadShuttle } from '~/model/shuttle';
+import type { SerialTransport } from '~/transport/SerialTransport';
 import { LineBreakTransformer } from '~/utils/LineBreakTransformer';
 import defaultFactory from './factory/default.py?raw';
 import tt03p5Factory from './factory/tt03p5.py?raw';
@@ -43,7 +44,7 @@ export class TTBoardDevice extends EventTarget {
   private terminalListener: TerminalListener | null = null;
   private setData;
 
-  constructor(readonly port: SerialPort) {
+  constructor(readonly transport: SerialTransport) {
     super();
     const [data, setData] = createStore({
       deviceName: null as string | null,
@@ -137,7 +138,11 @@ export class TTBoardDevice extends EventTarget {
 
     const textEncoderStream = new TextEncoderStream();
     this.writer = textEncoderStream.writable.getWriter();
-    this.writableStreamClosed = textEncoderStream.readable.pipeTo(this.port.writable);
+    this.writableStreamClosed = textEncoderStream.readable.pipeTo(this.transport.writable);
+    // The pipe rejects when the carrier goes away (a remote transport can drop
+    // at any moment); close() still awaits it, this only keeps the rejection
+    // from surfacing as an unhandled one when close() is never reached.
+    this.writableStreamClosed.catch(() => {});
     await this.writer.write('\x03\x03'); // Send Ctrl+C twice to stop any running program.
     await this.writer.write('\x01'); // Send Ctrl+A to enter RAW REPL mode.
     await this.writer.write(ttControl + '\x04'); // Send the demo.py script and execute it.
@@ -145,23 +150,29 @@ export class TTBoardDevice extends EventTarget {
   }
 
   private async run() {
-    const { port } = this;
+    const { transport } = this;
 
     function cleanupRawREPL(value: string) {
       // eslint-disable-next-line no-control-regex
       return value.replace(/^(\x04+>OK)+\x04*/, '');
     }
 
-    while (port.readable) {
+    outer: while (transport.state !== 'closed' && transport.readable) {
       const textDecoder = new TextDecoderStream();
-      this.readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      this.readableStreamClosed = transport.readable.pipeTo(textDecoder.writable);
+      this.readableStreamClosed.catch(() => {}); // see start(): close() still awaits it
       const [stream1, stream2] = textDecoder.readable.tee();
       this.reader = stream1
         .pipeThrough(new TransformStream(new LineBreakTransformer()))
         .getReader();
 
       this.terminalReader = stream2.getReader();
-      this.processTerminalStream(this.terminalReader);
+      // The terminal branch of the tee errors together with the branch read
+      // below, which handles it; without this catch the carrier dropping would
+      // surface as an unhandled rejection in the host page's console.
+      this.processTerminalStream(this.terminalReader).catch((error: unknown) => {
+        console.debug('Terminal stream ended:', error);
+      });
 
       try {
         // eslint-disable-next-line no-constant-condition
@@ -169,7 +180,9 @@ export class TTBoardDevice extends EventTarget {
           const { value, done } = await this.reader.read();
           if (done) {
             this.reader.releaseLock();
-            return;
+            // A transport's readable ends exactly once (unlike a WebSerial port,
+            // which upstream re-checks in a loop); do not re-pipe a finished stream.
+            break outer;
           }
           if (value && !this.terminalListener) {
             const cleanValue = cleanupRawREPL(value);
@@ -203,8 +216,12 @@ export class TTBoardDevice extends EventTarget {
   }
 
   async close() {
-    await this.reader?.cancel();
-    await this.terminalReader?.cancel();
+    // Every step here can reject once the carrier is gone (cancelling an
+    // errored reader, writing to or closing a broken writer, closing a socket
+    // that already died). No single failure may abort the rest of the
+    // teardown, or streams stay locked and the next connection leaks them.
+    await this.reader?.cancel().catch(() => {});
+    await this.terminalReader?.cancel().catch(() => {});
     await this.readableStreamClosed?.catch(() => {});
 
     try {
@@ -213,10 +230,10 @@ export class TTBoardDevice extends EventTarget {
       console.warn('Failed to exit RAW REPL mode:', e);
     }
 
-    await this.writer?.close();
+    await this.writer?.close().catch(() => {});
     await this.writableStreamClosed?.catch(() => {});
 
-    await this.port.close();
+    await this.transport.close().catch(() => {});
     this.dispatchEvent(new Event('close'));
   }
 }
