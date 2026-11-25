@@ -68,11 +68,26 @@ function normaliseApiBase(apiBase: string) {
   return apiBase.replace(/\/+$/, '');
 }
 
+let csrfToken: (() => string) | undefined;
+
+/**
+ * Set (or clear, with `undefined`) the host page's CSRF token getter. While
+ * set, every non-GET daemon request sends `X-CSRFToken: fn()`; the getter is
+ * called per request so a rotated token is picked up.
+ */
+export function setCsrfToken(fn: (() => string) | undefined): void {
+  csrfToken = fn;
+}
+
 async function daemonJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-  });
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...(csrfToken && method !== 'GET' ? { 'X-CSRFToken': csrfToken() } : {}),
+    // Callers here only ever pass plain-object headers.
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  const response = await fetch(url, { ...init, headers });
   let body: unknown = null;
   try {
     body = await response.json();

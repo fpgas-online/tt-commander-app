@@ -7,6 +7,7 @@ import {
   fpgaDesigns,
   loadFpgaDesigns,
   pinoutFromDesign,
+  setCsrfToken,
 } from './fpgaDesigns';
 import { shuttle } from './shuttle';
 
@@ -46,7 +47,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setCsrfToken(undefined);
+});
 
 describe('designToProject', () => {
   it('maps daemon designs onto shuttle projects (address = list index)', () => {
@@ -252,5 +256,33 @@ describe('daemon request shape', () => {
     vi.stubGlobal('fetch', fetchMock);
     await loadFpgaDesigns('/api/board/fpga-1/');
     expect(fetchMock).toHaveBeenCalledWith('/api/board/fpga-1/designs', expect.anything());
+  });
+});
+
+describe('CSRF token', () => {
+  it('enable sends X-CSRFToken when a token getter is set', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ enabled: 'x', clock_hz: null }));
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken(() => 'tok123');
+    await enableFpgaDesign('/api/board/fpga-1', 'x', 1000);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toMatchObject({ 'X-CSRFToken': 'tok123', Accept: 'application/json' });
+  });
+
+  it('GET designs sends no CSRF header', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ enabled: null, designs: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken(() => 'tok123');
+    await loadFpgaDesigns('/api/board/fpga-1');
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).not.toHaveProperty('X-CSRFToken');
+  });
+
+  it('no header when no getter is set', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ enabled: 'x', clock_hz: null }));
+    vi.stubGlobal('fetch', fetchMock);
+    await enableFpgaDesign('/api/board/fpga-1', 'x', 1000);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).not.toHaveProperty('X-CSRFToken');
   });
 });
