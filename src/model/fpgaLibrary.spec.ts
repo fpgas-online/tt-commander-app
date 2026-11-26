@@ -420,6 +420,32 @@ describe('libraryWarnings', () => {
     expect(ok.danger_level).toBe('safe');
     expect(ok.danger_reason).toBeUndefined();
   });
+
+  // Ruling BJ: PDK latch or clock-gate cells are a warning; a missing key means false.
+  const LATCH = { text: 'PDK latch cells: may not behave as on silicon', cls: 'warn' };
+
+  test('pdk_latches gives a warn badge after the timing one', () => {
+    const fullSpeed = { ...entries[1], validation: 'full-speed' };
+    expect(entries[1].pdk_latches).toBeUndefined();
+    expect(libraryWarnings(fullSpeed)).toEqual([]);
+    expect(libraryWarnings({ ...fullSpeed, pdk_latches: false })).toEqual([]);
+    expect(libraryWarnings({ ...fullSpeed, pdk_latches: true })).toEqual([LATCH]);
+    expect(libraryWarnings({ ...entries[4], pdk_latches: true })).toEqual([
+      { text: 'timing: 17.08 MHz < 25.175 MHz', cls: 'warn' },
+      LATCH,
+      { text: 'not hardware-validated', cls: 'info' },
+    ]);
+  });
+
+  test('a latch design is medium danger, never high', () => {
+    expect(
+      libraryToProject({ ...entries[1], validation: 'full-speed', pdk_latches: true }, 2),
+    ).toMatchObject({
+      address: 2,
+      danger_level: 'medium',
+      danger_reason: LATCH.text,
+    });
+  });
 });
 
 describe('loadLibraryDesign', () => {
