@@ -10,7 +10,7 @@ import { Header } from '~/components/Header';
 import { backoffDelay } from '~/model/backoff';
 import { setBoardInfo, type BoardInfo } from '~/model/board';
 import { compareVersions, minimumFirmwareVersion } from '~/model/firmware';
-import { loadFpgaDesigns } from '~/model/fpgaDesigns';
+import { loadFpgaDesigns, setCsrfToken } from '~/model/fpgaDesigns';
 import type { SerialTransport } from '~/transport/SerialTransport';
 import { WebSocketTransport } from '~/transport/WebSocketTransport';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
@@ -27,6 +27,11 @@ export interface EmbedOptions {
   apiBase?: string;
   chrome?: { header: boolean; footer: boolean };
   admin?: boolean;
+  /**
+   * Returns the host page's CSRF token, sent as `X-CSRFToken` on every
+   * non-GET daemon request (e.g. enabling a design). Called per request.
+   */
+  csrfToken?: () => string;
   reconnect?: { minDelayMs: number; maxDelayMs: number };
 }
 
@@ -58,6 +63,7 @@ export function EmbedApp(props: { options: EmbedOptions }) {
   let disposed = false;
 
   setBoardInfo({ ...props.options.board, apiBase: props.options.apiBase });
+  setCsrfToken(props.options.csrfToken);
 
   const scheduleReconnect = (reason: string) => {
     if (disposed) return;
