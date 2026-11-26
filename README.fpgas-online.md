@@ -104,8 +104,9 @@ in tinytapeout-vga-videos, section 4.
 
 - **When**: the index is fetched only when `/designs` carries the top-level `library` key, and is
   kept until a load says the id is gone. A 404 `VGA library not published` shows "The VGA library
-  is not published yet."; any other failure shows the error with a **Retry** button. Either way
-  the board's own designs stay usable.
+  is not published yet."; any other failure shows the error with a **Retry** button. The board's
+  own designs are listed as soon as `/designs` answers and the index is merged in when it
+  arrives, so a slow or failing index never hides them. Concurrent loads share one index request.
 - **The list**: the board's demos and uploads in the daemon's order, then every index entry in
   index order, then any library entry the Pi holds that the index does not list (under its name).
   Projects are keyed by (name, source), so a library entry and an upload of the same name are two
@@ -118,13 +119,16 @@ in tinytapeout-vga-videos, section 4.
   pinout, description, links and badges all come from the index; the Pinout tab reads the index
   entry's `pinout` and `description`.
 - **Picker**: search covers title, author, shuttle and macro (a library design's board name and
-  its `tt_um_` macro). At most 100 options are shown (`PROJECT_LIMIT`), with "showing 100 of N;
-  type to narrow" under them.
+  its `tt_um_` macro). At most 100 VGA library matches are shown (`PROJECT_LIMIT`), with
+  "showing 100 of N VGA library designs; type to narrow" under them; every ASIC project, demo and
+  upload that matches is always shown. An upload whose name the board now resolves to a library
+  design is shown disabled, marked as hidden.
 - **Load**: a library project calls the site's load route; every other project keeps
   `POST ${apiBase}/designs/<name>/enable`. After a library load the Commander runs `dump_state()`
   (the daemon drove `ui_in` pins behind the REPL), and shows `inputs set: 0x..`, held pins and a
-  hidden upload in an info alert (`designNotice`). A 404 `no such library design` reloads the
-  index. Errors go to `designError`.
+  hidden upload in an info alert (`designNotice`, prefixed with the design's title, shown only
+  while that design is selected and enabled). A 404 `no such library design` reloads the index.
+  Errors go to `designError`; a `dump_state()` failure after a successful load is only logged.
 - **Badges** (the site panel's texts, spec section 1): `timing: <fmax> MHz < <clock> MHz` and
   `timing not met on a secondary clock or path` are warnings; `not hardware-validated`,
   `validated at MCU speed only`, `QSPI emulated`, `video: <verdict>` and `inputs set: 0x..`

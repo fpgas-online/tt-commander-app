@@ -166,6 +166,73 @@ describe('loading', () => {
   });
 });
 
+describe('loading order and concurrency', () => {
+  test('board designs are published before a slow index arrives', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    routeFetch({
+      [`${API}/designs`]: () => jsonResponse(designsBody(null, [demo, upload])),
+      [`${API}/library`]: () => jsonResponse(siteIndex),
+    });
+    const fetchMock = vi.mocked(fetch);
+    const routed = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url) => {
+      if (url === `${API}/library`) {
+        await gate;
+      }
+      return routed(url as string);
+    });
+
+    const loading = loadFpgaDesigns(API);
+    await vi.waitFor(() => expect(fpgaLibrary.state).toBe('loading'));
+
+    expect(shuttle.loading).toBe(false);
+    expect(shuttle.projects.map((p) => p.macro)).toEqual(['tt_um_demo_a', 'my_upload']);
+
+    release();
+    await loading;
+    expect(shuttle.projects).toHaveLength(2 + entries.length);
+  });
+
+  test('concurrent loads share one index request', async () => {
+    const fetchMock = routeFetch({
+      [`${API}/designs`]: () => jsonResponse(designsBody(null, [demo])),
+      [`${API}/library`]: () => jsonResponse(siteIndex),
+    });
+
+    await Promise.all([loadFpgaDesigns(API), loadFpgaDesigns(API)]);
+
+    const libraryCalls = fetchMock.mock.calls.filter(([url]) => url === `${API}/library`);
+    expect(libraryCalls).toHaveLength(1);
+    expect(shuttle.projects).toHaveLength(1 + entries.length);
+  });
+
+  test('the pick survives the index being merged in', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    routeFetch({
+      [`${API}/designs`]: () => jsonResponse(designsBody(null, [demo, upload])),
+      [`${API}/library`]: () => jsonResponse(siteIndex),
+    });
+    const fetchMock = vi.mocked(fetch);
+    const routed = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url) => {
+      if (url === `${API}/library`) {
+        await gate;
+      }
+      return routed(url as string);
+    });
+
+    const loading = loadFpgaDesigns(API);
+    await vi.waitFor(() => expect(fpgaLibrary.state).toBe('loading'));
+    updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
+    release();
+    await loading;
+
+    expect(shuttle.projects[deviceState.selectedDesign]?.macro).toBe('my_upload');
+  });
+});
+
 describe('mergeProjects', () => {
   test('merge keeps board designs first then index order, address is position', () => {
     const projects = mergeProjects([onBoard(entries[1].id), upload, demo], entries);

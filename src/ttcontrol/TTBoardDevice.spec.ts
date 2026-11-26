@@ -334,8 +334,11 @@ describe('fpga kind, VGA library', () => {
     expect(written.join('')).toContain('dump_state()');
     expect(written.join('')).not.toContain('select_design');
     expect(device.data.designError).toBeNull();
-    expect(device.data.designNotice).toContain('inputs set: 0x01');
-    expect(device.data.designNotice).toContain('an uploaded design with the same name is hidden');
+    expect(device.data.designNotice?.name).toBe(entry.id);
+    expect(device.data.designNotice?.text).toContain('VGA Patterns: inputs set: 0x01');
+    expect(device.data.designNotice?.text).toContain(
+      'an uploaded design with the same name is hidden',
+    );
     expect(fpgaDesigns.enabled).toBe(entry.id);
     expect(fpgaDesigns.byName[entry.id]?.source).toBe('library');
     expect(deviceState.selectedDesign).toBe(1);
@@ -373,6 +376,32 @@ describe('fpga kind, VGA library', () => {
     expect(device.data.designError).toContain('a library load is already running on this board');
     expect(device.data.designNotice).toBeNull();
     expect(written.join('')).not.toContain('dump_state()');
+  });
+
+  test('a load that succeeds is not failed by a dump_state() error', async () => {
+    setUpMergedList();
+    routeFetch({
+      [`${api}/library/${entry.id}/load`]: () =>
+        jsonResponse({
+          enabled: entry.id,
+          ui_in: null,
+          ui_in_driven: [],
+          ui_in_held: [],
+          released: [],
+          pushed: false,
+          hides_upload: false,
+        }),
+    });
+    const { device } = makeDeviceCapturingWrites();
+    device.syncState = async () => {
+      throw new Error('writer closed');
+    };
+
+    await device.selectDesign({ address: 1, subtile: null });
+
+    expect(device.data.designError).toBeNull();
+    expect(fpgaDesigns.enabled).toBe(entry.id);
+    expect(device.data.logs.at(-1)?.text).toContain('writer closed');
   });
 
   test('a vanished id says so and reloads the index', async () => {

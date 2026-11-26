@@ -86,7 +86,18 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
     const entry = libraryEntry();
     return entry ? libraryWarnings(entry) : [];
   };
-  const designNotice = () => (isFpga() ? props.device.data.designNotice : null);
+  /** The last library load's notice, only while that design is selected and still enabled. */
+  const designNotice = () => {
+    const project = selectedProject();
+    const notice = props.device.data.designNotice;
+    return isFpga() &&
+      notice &&
+      project?.source === 'library' &&
+      project.macro === notice.name &&
+      fpgaDesigns.enabled === notice.name
+      ? notice.text
+      : null;
+  };
 
   const dangerLevel = () => selectedProject()?.danger_level;
   const dangerReason = () => selectedProject()?.danger_reason;

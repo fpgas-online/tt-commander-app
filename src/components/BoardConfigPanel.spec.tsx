@@ -306,17 +306,36 @@ describe('BoardConfigPanel (fpga) VGA library', () => {
     expect(loadButton(host)?.disabled).toBe(false);
   });
 
-  test('designNotice shows inputs set', () => {
-    // Row 1 has no inputs-set badge of its own.
+  test('designNotice shows inputs set', async () => {
+    // Row 1 has no inputs-set badge of its own; the notice comes from a real load.
     showLibrary();
     updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
+    const id = libraryEntries[1].id;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          enabled: id,
+          ui_in: 1,
+          ui_in_driven: [0],
+          ui_in_held: [],
+          released: [],
+          pushed: true,
+          hides_upload: false,
+        }),
+      ),
+    );
     const device = new TTBoardDevice(new InertTransport());
     const { host } = panel(device);
     expect(host.textContent).not.toContain('inputs set: 0x01');
 
-    setDeviceData(device, 'designNotice', 'VGA Patterns: inputs set: 0x01');
+    await device.selectDesign({ address: 1, subtile: null });
 
-    expect(host.textContent).toContain('inputs set: 0x01');
+    expect(host.textContent).toContain('VGA Example: inputs set: 0x01');
+
+    // Another project selected: the notice is about a design not shown.
+    updateDeviceState({ selectedDesign: 2, selectedSubtile: null });
+    expect(host.textContent).not.toContain('inputs set: 0x01');
   });
 
   test('not published yet is said, and the board designs still load', () => {
@@ -366,6 +385,70 @@ describe('BoardConfigPanel (fpga) VGA library', () => {
     await Promise.resolve();
 
     expect(optionTexts(root)).toHaveLength(PROJECT_LIMIT);
-    expect(root.textContent).toContain('showing 100 of 150; type to narrow');
+    expect(root.textContent).toContain('showing 100 of 150 VGA library designs; type to narrow');
+  });
+
+  test('a demo that matches stays listed beside more than 100 library matches', async () => {
+    const demo = designToProject({ ...demoDesign, title: 'Design demo' }, 0);
+    const many: Project[] = Array.from({ length: 150 }, (_, i) =>
+      libraryToProject(
+        { ...libraryEntries[1], id: `tt05_design_${i}`, title: `Design ${i}` },
+        i + 1,
+      ),
+    );
+    showLibrary([demo, ...many]);
+    const { host } = panel();
+
+    const root = openPicker(host, 'design');
+    await Promise.resolve();
+
+    const texts = optionTexts(root);
+    expect(texts.some((t) => t.includes('Design demo'))).toBe(true);
+    expect(texts).toHaveLength(PROJECT_LIMIT + 1);
+    expect(root.textContent).toContain('showing 100 of 150 VGA library designs; type to narrow');
+  });
+
+  test('an upload hidden by a library design of the same name cannot be picked', async () => {
+    const id = libraryEntries[1].id;
+    const hidden: FpgaDesign = { ...demoDesign, name: id, title: '', source: 'upload' };
+    const cached: FpgaDesign = { ...hidden, source: 'library', size: 4096 };
+    showLibrary(mergeProjects([hidden, cached], libraryEntries));
+    updateFpgaDesigns({ byName: { [id]: cached } });
+    const { host } = panel();
+
+    const root = openPicker(host);
+    await Promise.resolve();
+
+    const buttons = [...root.querySelectorAll('.MuiListItemButton-root')];
+    const upload = buttons.find((b) => b.textContent?.includes('upload hidden'));
+    expect(upload).toBeDefined();
+    expect(upload?.classList.contains('Mui-disabled')).toBe(true);
+    updateFpgaDesigns({ byName: {} });
+  });
+});
+
+describe('BoardConfigPanel (asic) project picker', () => {
+  test('an ASIC shuttle with 150 projects shows all 150', async () => {
+    updateShuttle({
+      id: 'tt06',
+      loading: false,
+      projects: Array.from({ length: 150 }, (_, i) => ({
+        macro: `tt_um_p${i}`,
+        address: i,
+        title: `Project ${i}`,
+        author: 'someone',
+        repo: '',
+        commit: '',
+        clock_hz: 0,
+        type: 'project' as const,
+      })),
+    });
+    const { host } = panel();
+
+    const root = openPicker(host);
+    await Promise.resolve();
+
+    expect(optionTexts(root)).toHaveLength(150);
+    expect(root.textContent).not.toContain('type to narrow');
   });
 });

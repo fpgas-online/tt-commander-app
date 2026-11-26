@@ -12,6 +12,7 @@ import {
 import createElementRef from '@suid/system/createElementRef';
 import { createSelect, fuzzyHighlight, fuzzySearch } from '@thisbeyond/solid-select';
 import { createEffect, createMemo, For, Show } from 'solid-js';
+import { fpgaDesigns } from '~/model/fpgaDesigns';
 import { fpgaLibrary, PROJECT_LIMIT } from '~/model/fpgaLibrary';
 import { formatDesignAddress, Project, projectAddress } from '~/model/shuttle';
 import { fuzzySort } from '~/utils/fuzzySort';
@@ -74,6 +75,10 @@ export function ProjectListItem(props: { project: Project; search: string }) {
           minWidth="100%"
         >
           by {author()}
+          <Show when={isHiddenUpload(props.project)}>
+            {' '}
+            (upload hidden by the VGA library design of the same name)
+          </Show>
         </Typography>
       </Stack>
     </Stack>
@@ -102,15 +107,53 @@ export function filterProjects(projects: Project[], inputValue: string): Project
   );
 }
 
+/**
+ * The picker's options for a set of matches: every ASIC project, demo and
+ * upload, and at most PROJECT_LIMIT VGA library designs, in match order.
+ * `libraryMatches` counts every library match, shown or not.
+ */
+export function capProjects(matches: Project[]) {
+  let libraryMatches = 0;
+  const options = matches.filter((p) => {
+    if (p.source !== 'library') {
+      return true;
+    }
+    libraryMatches += 1;
+    return libraryMatches <= PROJECT_LIMIT;
+  });
+  return { options, libraryMatches };
+}
+
+/**
+ * An upload whose name the board now resolves to a VGA library design: the
+ * daemon would load the library design, so the upload cannot be picked.
+ */
+export function isHiddenUpload(project: Project) {
+  return project.source === 'upload' && fpgaDesigns.byName[project.macro]?.source === 'library';
+}
+
 export function ProjectSelect(props: IProjectSelectProps) {
+  // One fuzzy match per keystroke: the options and the count line share it.
+  let cached: { projects: Project[]; input: string; result: ReturnType<typeof capProjects> };
+  const matchesFor = (input: string) => {
+    if (!cached || cached.projects !== props.projects || cached.input !== input) {
+      cached = {
+        projects: props.projects,
+        input,
+        result: capProjects(filterProjects(props.projects, input)),
+      };
+    }
+    return cached.result;
+  };
+
   const select = createSelect({
-    // A library adds hundreds of designs: render at most PROJECT_LIMIT options.
-    options: (inputValue: string) =>
-      filterProjects(props.projects, inputValue).slice(0, PROJECT_LIMIT),
+    // A library adds hundreds of designs: render at most PROJECT_LIMIT of them.
+    options: (inputValue: string) => matchesFor(inputValue).options,
+    isOptionDisabled: (option: Project) => isHiddenUpload(option),
     onChange: (value) => value && props.onSelect(value),
   });
 
-  const matchCount = createMemo(() => filterProjects(props.projects, select.inputValue()).length);
+  const libraryMatches = createMemo(() => matchesFor(select.inputValue()).libraryMatches);
 
   const fieldRef = createElementRef();
 
@@ -200,10 +243,10 @@ export function ProjectSelect(props: IProjectSelectProps) {
                 </ListItemButton>
               )}
             </For>
-            <Show when={matchCount() > PROJECT_LIMIT}>
+            <Show when={libraryMatches() > PROJECT_LIMIT}>
               <ListItem>
                 <ListItemText
-                  secondary={`showing ${PROJECT_LIMIT} of ${matchCount()}; type to narrow`}
+                  secondary={`showing ${PROJECT_LIMIT} of ${libraryMatches()} VGA library designs; type to narrow`}
                 />
               </ListItem>
             </Show>

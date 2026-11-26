@@ -87,8 +87,11 @@ export class TTBoardDevice extends EventTarget {
       factoryTest: { status: 'idle', message: '' } as IFactoryTestState,
       /** Last failure reported by the FPGA daemon, shown in the Config tab. */
       designError: null as string | null,
-      /** What the last VGA library load did beyond loading (inputs set, hidden upload). */
-      designNotice: null as string | null,
+      /**
+       * What the last VGA library load did beyond loading (inputs set, held pins,
+       * a hidden upload): `name` is the design loaded, `text` starts with its title.
+       */
+      designNotice: null as { name: string; text: string } | null,
     });
     this.data = data;
     this.setData = setData;
@@ -170,8 +173,11 @@ export class TTBoardDevice extends EventTarget {
     try {
       const result = await loadLibraryDesign(apiBase, project.macro);
       noteLibraryEnabled(result.enabled);
-      this.setData('designNotice', libraryLoadNotice(result));
-      await this.syncState();
+      const notice = libraryLoadNotice(result);
+      this.setData(
+        'designNotice',
+        notice ? { name: result.enabled, text: `${project.title}: ${notice}` } : null,
+      );
     } catch (e) {
       if (e instanceof DaemonError && e.status === 404 && e.error === 'no such library design') {
         // The index was republished without this design since the list was fetched.
@@ -184,6 +190,16 @@ export class TTBoardDevice extends EventTarget {
         return;
       }
       this.setData('designError', e instanceof DaemonError ? e.message : String(e));
+      return;
+    }
+    // The load succeeded; a REPL write failing afterwards is not a failed load.
+    try {
+      await this.syncState();
+    } catch (e) {
+      this.addLogEntry({
+        text: `<<< dump_state() after the load failed: ${String(e)} >>>`,
+        sent: false,
+      });
     }
   }
 

@@ -3,9 +3,9 @@
 
 import { createStore } from 'solid-js/store';
 import { daemonJson, normaliseApiBase } from './daemonApi';
-import { updateDeviceState } from './DeviceState';
+import { deviceState, updateDeviceState } from './DeviceState';
 import { fpgaLibrary, LibraryEntry, libraryToProject, loadFpgaLibrary } from './fpgaLibrary';
-import { Project, shuttle, updateShuttle } from './shuttle';
+import { findProject, Project, shuttle, updateShuttle } from './shuttle';
 
 export { DaemonError, setCsrfToken } from './daemonApi';
 
@@ -141,9 +141,9 @@ function designsByName(designs: FpgaDesign[]) {
  * that name, or `library` when `/designs` does not list it (an entry just
  * loaded, or a stale list). A name in neither leaves the selection alone.
  */
-function syncSelectionToEnabled(enabled: string | null) {
+function syncSelectionToEnabled(enabled: string | null): boolean {
   if (!enabled) {
-    return;
+    return false;
   }
   const source = fpgaDesigns.byName[enabled]?.source ?? 'library';
   const project =
@@ -152,41 +152,82 @@ function syncSelectionToEnabled(enabled: string | null) {
   if (project) {
     updateDeviceState({ selectedDesign: project.address, selectedSubtile: null });
   }
+  return project != null;
 }
+
+/**
+ * Rebuild the project list from `designs` and the index as it stands, keeping
+ * the user's current pick by (name, source): addresses are list positions, and
+ * merging the index in moves the cached-but-unindexed library entries.
+ */
+function publishProjects(designs: FpgaDesign[], hasLibrary: boolean) {
+  const picked = findProject(shuttle.projects, {
+    address: deviceState.selectedDesign,
+    subtile: null,
+  });
+  const projects = hasLibrary
+    ? mergeProjects(designs, fpgaLibrary.designs)
+    : designs.map(designToProject);
+  updateShuttle({ projects });
+  const again =
+    picked && projects.find((p) => p.macro === picked.macro && p.source === picked.source);
+  if (again) {
+    updateDeviceState({ selectedDesign: again.address, selectedSubtile: null });
+  }
+}
+
+/** Bumped by every loadFpgaDesigns call; an older call's late results are dropped. */
+let designsGeneration = 0;
 
 /**
  * Replace the shuttle project list with the daemon's designs (FPGA boards only),
  * merged with the site's VGA library index when the daemon supports the library.
- * The index is fetched once and kept while it is good; a failure to fetch it
- * leaves the board's own designs usable.
+ * The board's own designs are published as soon as `/designs` answers; the
+ * index is merged in when it arrives, so a slow or failing index never hides
+ * the demos and uploads. The index is fetched once and kept while it is good.
  */
 export async function loadFpgaDesigns(apiBase: string): Promise<void> {
+  const generation = ++designsGeneration;
+  const current = () => generation === designsGeneration;
   updateFpgaDesigns({ loading: true, error: null });
   updateShuttle({ id: 'FPGA', projects: [], loading: true });
+  let body: DesignsBody;
   try {
-    const body = await daemonJson<DesignsBody>(`${normaliseApiBase(apiBase)}/designs`);
-    const hasLibrary = body.library != null;
-    // The top-level form replaces byName; the path form would merge in the old names.
-    updateFpgaDesigns({
-      byName: designsByName(body.designs),
-      enabled: body.enabled,
-      hasLibrary,
-      error: null,
-    });
-    if (hasLibrary && fpgaLibrary.state !== 'ready') {
-      await loadFpgaLibrary(apiBase);
-    }
-    updateShuttle({
-      projects: hasLibrary
-        ? mergeProjects(body.designs, fpgaLibrary.designs)
-        : body.designs.map(designToProject),
-    });
-    syncSelectionToEnabled(body.enabled);
+    body = await daemonJson<DesignsBody>(`${normaliseApiBase(apiBase)}/designs`);
   } catch (e) {
-    updateFpgaDesigns({ error: e instanceof Error ? e.message : String(e) });
-  } finally {
-    updateFpgaDesigns({ loading: false });
-    updateShuttle({ loading: false });
+    if (current()) {
+      updateFpgaDesigns({ error: e instanceof Error ? e.message : String(e), loading: false });
+      updateShuttle({ loading: false });
+    }
+    return;
+  }
+  if (!current()) {
+    return;
+  }
+  const hasLibrary = body.library != null;
+  // The top-level form replaces byName; the path form would merge in the old names.
+  updateFpgaDesigns({
+    byName: designsByName(body.designs),
+    enabled: body.enabled,
+    hasLibrary,
+    error: null,
+    loading: false,
+  });
+  publishProjects(body.designs, hasLibrary);
+  updateShuttle({ loading: false });
+  const found = syncSelectionToEnabled(body.enabled);
+  if (hasLibrary && fpgaLibrary.state !== 'ready') {
+    // loadFpgaLibrary shares one request between concurrent callers.
+    await loadFpgaLibrary(apiBase);
+    if (!current()) {
+      return;
+    }
+    publishProjects(body.designs, hasLibrary);
+    // Only now can an enabled library design that /designs does not list be
+    // found; otherwise keep whatever the user picked meanwhile.
+    if (!found) {
+      syncSelectionToEnabled(body.enabled);
+    }
   }
 }
 

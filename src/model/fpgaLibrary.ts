@@ -84,8 +84,24 @@ export function resetFpgaLibrary() {
   updateFpgaLibrary({ state: 'idle', designs: [], byId: {}, error: null });
 }
 
-/** Fetch the site's index. Never throws: the outcome is `fpgaLibrary.state`. */
-export async function loadFpgaLibrary(apiBase: string): Promise<void> {
+let inflight: Promise<void> | null = null;
+
+/**
+ * Fetch the site's index. Never throws: the outcome is `fpgaLibrary.state`.
+ * While a fetch is running (state `loading`), a second call shares it instead
+ * of sending another request.
+ */
+export function loadFpgaLibrary(apiBase: string): Promise<void> {
+  if (inflight && fpgaLibrary.state === 'loading') {
+    return inflight;
+  }
+  inflight = fetchFpgaLibrary(apiBase).finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function fetchFpgaLibrary(apiBase: string): Promise<void> {
   updateFpgaLibrary({ state: 'loading', error: null });
   try {
     const index = await daemonJson<LibraryIndex>(`${normaliseApiBase(apiBase)}/library`);
