@@ -14,6 +14,7 @@ import {
   type FpgaDesign,
 } from '~/model/fpgaDesigns';
 import {
+  fpgaLibrary,
   libraryToProject,
   PROJECT_LIMIT,
   resetFpgaLibrary,
@@ -420,10 +421,50 @@ describe('BoardConfigPanel (fpga) VGA library', () => {
     await Promise.resolve();
 
     const buttons = [...root.querySelectorAll('.MuiListItemButton-root')];
-    const upload = buttons.find((b) => b.textContent?.includes('upload hidden'));
+    const upload = buttons.find((b) => b.textContent?.includes('hidden by a VGA library design'));
     expect(upload).toBeDefined();
     expect(upload?.classList.contains('Mui-disabled')).toBe(true);
     updateFpgaDesigns({ byName: {} });
+  });
+});
+
+describe('BoardConfigPanel (fpga) index arriving', () => {
+  afterEach(() => {
+    resetFpgaLibrary();
+    updateFpgaDesigns({ hasLibrary: false, byName: {}, enabled: null });
+  });
+
+  test('typing while the index arrives keeps the typed text', async () => {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/library')) {
+          await gate;
+          return jsonResponse({ schema: 1, generated: '', base_url: '', designs: libraryEntries });
+        }
+        return jsonResponse({
+          enabled: demoDesign.name,
+          library: { max_bytes: 1, used_bytes: 0 },
+          designs: [demoDesign],
+        });
+      }),
+    );
+    const loading = loadFpgaDesigns('/api/board/fpga-1');
+    await vi.waitFor(() => expect(fpgaLibrary.state).toBe('loading'));
+    const { host } = panel();
+
+    const root = openPicker(host, 'flappy');
+    await Promise.resolve();
+    release();
+    await loading;
+    await Promise.resolve();
+
+    const input = host.querySelector<HTMLInputElement>('input[autocomplete="off"]');
+    expect(input?.value).toBe('flappy');
+    expect(optionTexts(root)[0]).toContain('Flappy VGA');
   });
 });
 

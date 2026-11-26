@@ -81,10 +81,15 @@ export function setFpgaLibraryIndex(designs: LibraryEntry[]) {
 
 /** Forget the index, so the next design-list load fetches it again. */
 export function resetFpgaLibrary() {
+  // An index fetch still running belongs to the forgotten index: drop its result.
+  libraryGeneration += 1;
+  inflight = null;
   updateFpgaLibrary({ state: 'idle', designs: [], byId: {}, error: null });
 }
 
 let inflight: Promise<void> | null = null;
+/** Bumped by resetFpgaLibrary; a fetch started before the bump never writes the store. */
+let libraryGeneration = 0;
 
 /**
  * Fetch the site's index. Never throws: the outcome is `fpgaLibrary.state`.
@@ -95,18 +100,28 @@ export function loadFpgaLibrary(apiBase: string): Promise<void> {
   if (inflight && fpgaLibrary.state === 'loading') {
     return inflight;
   }
-  inflight = fetchFpgaLibrary(apiBase).finally(() => {
-    inflight = null;
+  const p: Promise<void> = fetchFpgaLibrary(apiBase, libraryGeneration).finally(() => {
+    // A reset and a newer fetch may have replaced it meanwhile.
+    if (inflight === p) {
+      inflight = null;
+    }
   });
-  return inflight;
+  inflight = p;
+  return p;
 }
 
-async function fetchFpgaLibrary(apiBase: string): Promise<void> {
+async function fetchFpgaLibrary(apiBase: string, generation: number): Promise<void> {
   updateFpgaLibrary({ state: 'loading', error: null });
   try {
     const index = await daemonJson<LibraryIndex>(`${normaliseApiBase(apiBase)}/library`);
+    if (generation !== libraryGeneration) {
+      return;
+    }
     setFpgaLibraryIndex(index.designs);
   } catch (e) {
+    if (generation !== libraryGeneration) {
+      return;
+    }
     if (e instanceof DaemonError && e.status === 404 && e.error === NOT_PUBLISHED) {
       updateFpgaLibrary({ state: 'notPublished', designs: [], byId: {}, error: null });
       return;

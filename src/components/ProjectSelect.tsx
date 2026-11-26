@@ -64,22 +64,25 @@ export function ProjectListItem(props: { project: Project; search: string }) {
             </span>
           </Show>
         </Typography>
-        <Typography
-          variant="body2"
-          color="textSecondary"
-          title={props.project.author}
-          overflow="hidden"
-          whiteSpace="nowrap"
-          textOverflow="ellipsis"
-          width={0}
-          minWidth="100%"
-        >
-          by {author()}
-          <Show when={isHiddenUpload(props.project)}>
-            {' '}
-            (upload hidden by the VGA library design of the same name)
-          </Show>
-        </Typography>
+        <Show when={props.project.author}>
+          <Typography
+            variant="body2"
+            color="textSecondary"
+            title={props.project.author}
+            overflow="hidden"
+            whiteSpace="nowrap"
+            textOverflow="ellipsis"
+            width={0}
+            minWidth="100%"
+          >
+            by {author()}
+          </Typography>
+        </Show>
+        <Show when={isHiddenUpload(props.project)}>
+          <Typography variant="body2" color="textSecondary" fontStyle="italic">
+            hidden by a VGA library design
+          </Typography>
+        </Show>
       </Stack>
     </Stack>
   );
@@ -157,9 +160,19 @@ export function ProjectSelect(props: IProjectSelectProps) {
 
   const fieldRef = createElementRef();
 
+  // Clear the search only when the selection really changes, by (macro, source):
+  // a list rebuild (the library index arriving) hands over a new object for the
+  // same project, and must not wipe what the user is typing.
+  let shown: { macro: string; source?: string } | undefined;
   createEffect(() => {
-    select.setValue(props.selected);
-    select.setInputValue('');
+    const selected = props.selected;
+    select.setValue(selected);
+    const same =
+      shown && selected && shown.macro === selected.macro && shown.source === selected.source;
+    shown = selected && { macro: selected.macro, source: selected.source };
+    if (!same) {
+      select.setInputValue('');
+    }
   });
 
   return (

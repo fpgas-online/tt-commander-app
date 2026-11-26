@@ -14,6 +14,7 @@ import {
   fpgaLibrary,
   libraryToProject,
   libraryWarnings,
+  loadFpgaLibrary,
   loadLibraryDesign,
   resetFpgaLibrary,
   type LibraryEntry,
@@ -230,6 +231,38 @@ describe('loading order and concurrency', () => {
     await loading;
 
     expect(shuttle.projects[deviceState.selectedDesign]?.macro).toBe('my_upload');
+  });
+});
+
+describe('index fetch and reset', () => {
+  test('a fetch that a reset overtook drops its result, even when it resolves last', async () => {
+    let releaseOld!: () => void;
+    const oldGate = new Promise<void>((resolve) => (releaseOld = resolve));
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          await oldGate;
+          return jsonResponse(siteIndex);
+        }
+        return jsonResponse({ ...siteIndex, designs: entries.slice(1) });
+      }),
+    );
+
+    const old = loadFpgaLibrary(API);
+    resetFpgaLibrary();
+    await loadFpgaLibrary(API);
+    expect(Object.keys(fpgaLibrary.byId)).toHaveLength(entries.length - 1);
+
+    releaseOld();
+    await old;
+
+    expect(fpgaLibrary.state).toBe('ready');
+    expect(Object.keys(fpgaLibrary.byId)).toHaveLength(entries.length - 1);
+    expect(fpgaLibrary.byId[entries[0].id]).toBeUndefined();
+    expect(calls).toBe(2);
   });
 });
 

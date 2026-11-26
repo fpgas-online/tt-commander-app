@@ -122,7 +122,7 @@ in tinytapeout-vga-videos, section 4.
   its `tt_um_` macro). At most 100 VGA library matches are shown (`PROJECT_LIMIT`), with
   "showing 100 of N VGA library designs; type to narrow" under them; every ASIC project, demo and
   upload that matches is always shown. An upload whose name the board now resolves to a library
-  design is shown disabled, marked as hidden.
+  design is shown disabled, marked "hidden by a VGA library design".
 - **Load**: a library project calls the site's load route; every other project keeps
   `POST ${apiBase}/designs/<name>/enable`. After a library load the Commander runs `dump_state()`
   (the daemon drove `ui_in` pins behind the REPL), and shows `inputs set: 0x..`, held pins and a

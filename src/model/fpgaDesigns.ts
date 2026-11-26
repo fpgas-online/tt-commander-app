@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026, fpgas.online contributors
 
+import { batch } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { daemonJson, normaliseApiBase } from './daemonApi';
 import { deviceState, updateDeviceState } from './DeviceState';
@@ -168,12 +169,16 @@ function publishProjects(designs: FpgaDesign[], hasLibrary: boolean) {
   const projects = hasLibrary
     ? mergeProjects(designs, fpgaLibrary.designs)
     : designs.map(designToProject);
-  updateShuttle({ projects });
   const again =
     picked && projects.find((p) => p.macro === picked.macro && p.source === picked.source);
-  if (again) {
-    updateDeviceState({ selectedDesign: again.address, selectedSubtile: null });
-  }
+  // One batch: the picker must never see the new list with the old address,
+  // which would read as a changed selection and clear its search text.
+  batch(() => {
+    updateShuttle({ projects });
+    if (again) {
+      updateDeviceState({ selectedDesign: again.address, selectedSubtile: null });
+    }
+  });
 }
 
 /** Bumped by every loadFpgaDesigns call; an older call's late results are dropped. */
@@ -223,8 +228,10 @@ export async function loadFpgaDesigns(apiBase: string): Promise<void> {
       return;
     }
     publishProjects(body.designs, hasLibrary);
-    // Only now can an enabled library design that /designs does not list be
-    // found; otherwise keep whatever the user picked meanwhile.
+    // If the first sync found no project for the enabled name (a library design
+    // /designs does not list), it can be found only now that the index is merged:
+    // follow it, even over a pick the user made meanwhile. Following the enabled
+    // library design is intended. If the first sync found it, the pick is kept.
     if (!found) {
       syncSelectionToEnabled(body.enabled);
     }
