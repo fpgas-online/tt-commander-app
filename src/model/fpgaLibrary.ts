@@ -41,6 +41,12 @@ export interface LibraryEntry {
   verdict: string;
   /** `none` or `emulated`. */
   qspi: string;
+  /**
+   * The design uses PDK latch or clock-gate cells (Ruling BJ). Optional for
+   * now: an older site's index leaves it out, and missing means false. A later
+   * task makes it required; then drop the `?`.
+   */
+  pdk_latches?: boolean;
   poster: string | null;
   preview_gif: string | null;
   video_10s_webm: string | null;
@@ -172,7 +178,8 @@ function hex2(n: number) {
 
 /**
  * The badges of an entry, exactly the spec's table (section 1, Warnings) and the
- * site panel's texts. Only missed timing is a warning; nothing here ever
+ * site panel's texts. A warning is a doubt about how the design behaves on the
+ * FPGA: missed timing, or PDK latch cells (Ruling BJ). Nothing here ever
  * disables Load.
  */
 export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
@@ -187,6 +194,10 @@ export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
         : // Ruling AN: the main clock passes; another clock or a cross-domain path fails.
           { text: 'timing not met on a secondary clock or path', cls: 'warn' },
     );
+  }
+  // Ruling BJ: the design uses PDK latch or clock-gate cells.
+  if (e.pdk_latches === true) {
+    badges.push({ text: 'PDK latch cells: may not behave as on silicon', cls: 'warn' });
   }
   if (e.validation === 'none') {
     badges.push({ text: 'not hardware-validated', cls: 'info' });
@@ -233,7 +244,7 @@ export function libraryToProject(e: LibraryEntry, address: number): Project {
     repo: e.repo_url,
     commit: e.commit,
     clock_hz: e.clock_hz,
-    // 'high' would disable Load; a missed timing is only ever a warning.
+    // 'high' would disable Load; a missed timing or a latch design is only ever a warning.
     danger_level: warn ? 'medium' : 'safe',
     ...(warn ? { danger_reason: badges.map((b) => b.text).join('; ') } : {}),
     type: 'project',

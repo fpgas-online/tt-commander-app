@@ -129,8 +129,10 @@ in tinytapeout-vga-videos, section 4.
   hidden upload in an info alert (`designNotice`, prefixed with the design's title, shown only
   while that design is selected and enabled). A 404 `no such library design` reloads the index.
   Errors go to `designError`; a `dump_state()` failure after a successful load is only logged.
-- **Badges** (the site panel's texts, spec section 1): `timing: <fmax> MHz < <clock> MHz` and
-  `timing not met on a secondary clock or path` are warnings; `not hardware-validated`,
+- **Badges** (the site panel's texts, spec section 1): `timing: <fmax> MHz < <clock> MHz`,
+  `timing not met on a secondary clock or path` and, when `pdk_latches` is true (Ruling BJ; a
+  missing key means false for now), `PDK latch cells: may not behave as on silicon` are
+  warnings; `not hardware-validated`,
   `validated at MCU speed only`, `QSPI emulated`, `video: <verdict>` and `inputs set: 0x..`
   (only when `ui_in` is neither null nor 0) are info. A warning sets `danger_level: 'medium'`
   (the warning icon) with the badges joined by `; ` as the reason; `'high'` is never set, so Load
