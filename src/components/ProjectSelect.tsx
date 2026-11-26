@@ -11,7 +11,8 @@ import {
 } from '@suid/material';
 import createElementRef from '@suid/system/createElementRef';
 import { createSelect, fuzzyHighlight, fuzzySearch } from '@thisbeyond/solid-select';
-import { createEffect, For, Show } from 'solid-js';
+import { createEffect, createMemo, For, Show } from 'solid-js';
+import { fpgaLibrary, PROJECT_LIMIT } from '~/model/fpgaLibrary';
 import { formatDesignAddress, Project, projectAddress } from '~/model/shuttle';
 import { fuzzySort } from '~/utils/fuzzySort';
 import { Popper } from './Popper';
@@ -79,17 +80,37 @@ export function ProjectListItem(props: { project: Project; search: string }) {
   );
 }
 
+/**
+ * The projects matching a search, best first: over the title, the author, the
+ * shuttle and the macro. A VGA library design's macro is its name on the board;
+ * its Tiny Tapeout macro (`tt_um_...`, from the index) is searched too.
+ */
+export function filterProjects(projects: Project[], inputValue: string): Project[] {
+  if (!inputValue) {
+    return projects;
+  }
+  const searchable = projects.map((project) => ({
+    project,
+    title: project.title,
+    author: project.author,
+    shuttle: project.shuttle ?? '',
+    macro: project.macro,
+    ttMacro: project.source === 'library' ? (fpgaLibrary.byId[project.macro]?.macro ?? '') : '',
+  }));
+  return fuzzySort(inputValue, searchable, ['title', 'author', 'shuttle', 'macro', 'ttMacro']).map(
+    (x) => x.item.project,
+  );
+}
+
 export function ProjectSelect(props: IProjectSelectProps) {
   const select = createSelect({
-    options: (inputValue: string) => {
-      if (!inputValue) {
-        return props.projects;
-      }
-
-      return fuzzySort(inputValue, props.projects, ['title', 'author']).map((x) => x.item);
-    },
+    // A library adds hundreds of designs: render at most PROJECT_LIMIT options.
+    options: (inputValue: string) =>
+      filterProjects(props.projects, inputValue).slice(0, PROJECT_LIMIT),
     onChange: (value) => value && props.onSelect(value),
   });
+
+  const matchCount = createMemo(() => filterProjects(props.projects, select.inputValue()).length);
 
   const fieldRef = createElementRef();
 
@@ -179,6 +200,13 @@ export function ProjectSelect(props: IProjectSelectProps) {
                 </ListItemButton>
               )}
             </For>
+            <Show when={matchCount() > PROJECT_LIMIT}>
+              <ListItem>
+                <ListItemText
+                  secondary={`showing ${PROJECT_LIMIT} of ${matchCount()}; type to narrow`}
+                />
+              </ListItem>
+            </Show>
           </List>
         </Paper>
       </Popper>

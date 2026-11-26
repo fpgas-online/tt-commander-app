@@ -6,8 +6,10 @@ import { render } from 'solid-js/web';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { setBoardInfo } from '~/model/board';
 import { updateDeviceState } from '~/model/DeviceState';
-import { updateFpgaDesigns, type FpgaDesign } from '~/model/fpgaDesigns';
+import { mergeProjects, updateFpgaDesigns, type FpgaDesign } from '~/model/fpgaDesigns';
+import { resetFpgaLibrary, setFpgaLibraryIndex, type LibraryEntry } from '~/model/fpgaLibrary';
 import { updateShuttle, type Project } from '~/model/shuttle';
+import fixture from '~/model/testing/fpga-library.json';
 import type { SerialTransport, TransportState } from '~/transport/SerialTransport';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { PinoutPanel } from './PinoutPanel';
@@ -91,6 +93,7 @@ afterEach(() => {
   updateFpgaDesigns({ byName: {}, enabled: null });
   updateShuttle({ projects: [] });
   updateDeviceState({ selectedDesign: 0, selectedSubtile: null });
+  resetFpgaLibrary();
   vi.unstubAllGlobals();
 });
 
@@ -171,6 +174,87 @@ describe('PinoutPanel (fpga)', () => {
     expect(host.textContent).toContain('z0');
     expect(host.textContent).toContain('y0');
     expect(host.textContent).not.toContain('a0');
+
+    dispose();
+    host.remove();
+  });
+});
+
+const libraryEntries = fixture.designs as LibraryEntry[];
+
+/** A library entry as `/designs` lists it: the upload shape plus `source` and `size` (N2). */
+function onBoard(name: string): FpgaDesign {
+  return {
+    name,
+    title: '',
+    author: '',
+    description: '',
+    docs_url: '',
+    repo_url: '',
+    clock_hz: null,
+    pinout: {},
+    source: 'library',
+    size: 4096,
+  };
+}
+
+/** The text of each cell of the pinout table's body, row by row. */
+function pinoutRows(host: HTMLElement) {
+  return [...host.querySelectorAll('tbody tr')].map((tr) =>
+    [...tr.querySelectorAll('td')].map((td) => td.textContent),
+  );
+}
+
+function renderPinout() {
+  const device = new TTBoardDevice(new InertTransport());
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const dispose = render(() => <PinoutPanel device={device} />, host);
+  return { host, dispose };
+}
+
+describe('PinoutPanel (fpga, VGA library)', () => {
+  test('Pinout tab of an enabled library design shows the index pinout', async () => {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    const entry = { ...libraryEntries[1], description: 'From the index' };
+    updateFpgaDesigns({ byName: { [entry.id]: onBoard(entry.id) }, enabled: entry.id });
+    setFpgaLibraryIndex([entry]);
+    updateShuttle({ projects: mergeProjects([onBoard(entry.id)], [entry]) });
+    updateDeviceState({ selectedDesign: 0, selectedSubtile: null });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { host, dispose } = renderPinout();
+    await flush();
+
+    // Row 0: #, Input, Output, Bidirectional.
+    expect(pinoutRows(host)[0]).toEqual(['0', '', 'R1', '']);
+    expect(pinoutRows(host)[7]).toEqual(['7', '', 'HSync', '']);
+    expect(host.textContent).toContain('VGA Example');
+    expect(host.textContent).toContain('Uri Shaked');
+    expect(host.textContent).toContain('From the index');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    dispose();
+    host.remove();
+  });
+
+  test('library entry missing from the index renders an empty pinout without throwing', async () => {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: '/api/board/fpga-1' });
+    // Only name, source and size are promised for a library design from /designs.
+    const bare = { name: 'tt05_vanished', source: 'library', size: 4096 } as FpgaDesign;
+    updateFpgaDesigns({ byName: { tt05_vanished: bare }, enabled: 'tt05_vanished' });
+    setFpgaLibraryIndex(libraryEntries);
+    updateShuttle({ projects: mergeProjects([bare], libraryEntries) });
+    updateDeviceState({ selectedDesign: libraryEntries.length, selectedSubtile: null });
+
+    const { host, dispose } = renderPinout();
+    await flush();
+
+    expect(host.textContent).toContain('tt05_vanished');
+    expect(host.textContent).not.toContain('Error loading documentation');
+    expect(pinoutRows(host)).toHaveLength(8);
+    expect(pinoutRows(host)[0]).toEqual(['0', '', '', '']);
 
     dispose();
     host.remove();

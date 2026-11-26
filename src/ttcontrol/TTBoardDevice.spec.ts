@@ -5,8 +5,15 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { setBoardInfo } from '~/model/board';
 import { deviceState, updateDeviceState } from '~/model/DeviceState';
-import { designToProject, FpgaDesign } from '~/model/fpgaDesigns';
+import { designToProject, FpgaDesign, fpgaDesigns, mergeProjects } from '~/model/fpgaDesigns';
+import {
+  fpgaLibrary,
+  resetFpgaLibrary,
+  setFpgaLibraryIndex,
+  type LibraryEntry,
+} from '~/model/fpgaLibrary';
 import { updateShuttle } from '~/model/shuttle';
+import fixture from '~/model/testing/fpga-library.json';
 import type { SerialTransport, TransportState } from '~/transport/SerialTransport';
 import { TTBoardDevice } from './TTBoardDevice';
 
@@ -252,6 +259,139 @@ describe('fpga kind', () => {
     device.clearDesignError();
 
     expect(device.data.designError).toBeNull();
+  });
+});
+
+const libraryEntries = fixture.designs as LibraryEntry[];
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+/** A fetch double that answers by URL; an unrouted URL fails the test loudly. */
+function routeFetch(routes: Record<string, () => Response>) {
+  const fn = vi.fn(async (url: string) => {
+    const route = routes[url];
+    if (!route) {
+      throw new Error(`unexpected fetch ${url}`);
+    }
+    return route();
+  });
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
+
+describe('fpga kind, VGA library', () => {
+  const api = '/api/board/fpga-1';
+  const entry = libraryEntries[0];
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setBoardInfo({ slug: '', kind: 'asic', apiBase: undefined });
+    resetFpgaLibrary();
+    updateDeviceState({ selectedDesign: 0, selectedSubtile: null });
+  });
+
+  /** demo A at 0, then the five index entries at 1..5. */
+  function setUpMergedList() {
+    setBoardInfo({ slug: 'fpga-1', kind: 'fpga', apiBase: api });
+    setFpgaLibraryIndex(libraryEntries);
+    updateShuttle({
+      id: 'FPGA',
+      loading: false,
+      projects: mergeProjects([demoA], libraryEntries),
+    });
+  }
+
+  test('selectFpgaDesign routes library projects to the load route and calls syncState', async () => {
+    setUpMergedList();
+    const fetchMock = routeFetch({
+      [`${api}/library/${entry.id}/load`]: () =>
+        jsonResponse({
+          enabled: entry.id,
+          clock_hz: 25175000,
+          ui_in: 1,
+          ui_in_mask: 1,
+          ui_in_driven: [0],
+          ui_in_held: [],
+          ui_in_inputs: [1, 2, 3, 4, 5, 6, 7],
+          released: [],
+          pushed: true,
+          hides_upload: true,
+        }),
+    });
+    const { device, written } = makeDeviceCapturingWrites();
+
+    await device.selectDesign({ address: 1, subtile: null }, 25175000);
+    await flushWrites();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(written.join('')).toContain('dump_state()');
+    expect(written.join('')).not.toContain('select_design');
+    expect(device.data.designError).toBeNull();
+    expect(device.data.designNotice).toContain('inputs set: 0x01');
+    expect(device.data.designNotice).toContain('an uploaded design with the same name is hidden');
+    expect(fpgaDesigns.enabled).toBe(entry.id);
+    expect(fpgaDesigns.byName[entry.id]?.source).toBe('library');
+    expect(deviceState.selectedDesign).toBe(1);
+  });
+
+  test('selectFpgaDesign keeps enableFpgaDesign for demos', async () => {
+    setUpMergedList();
+    const fetchMock = routeFetch({
+      [`${api}/designs/tt_um_demo_a/enable`]: () =>
+        jsonResponse({ enabled: 'tt_um_demo_a', clock_hz: 1000 }),
+    });
+    const { device, written } = makeDeviceCapturingWrites();
+
+    await device.selectDesign({ address: 0, subtile: null }, 1000);
+    await flushWrites();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(device.data.designError).toBeNull();
+    expect(device.data.designNotice).toBeNull();
+    expect(written.join('')).not.toContain('dump_state()');
+    expect(deviceState.selectedDesign).toBe(0);
+  });
+
+  test('load error goes to designError', async () => {
+    setUpMergedList();
+    routeFetch({
+      [`${api}/library/${entry.id}/load`]: () =>
+        jsonResponse({ error: 'a library load is already running on this board', detail: '' }, 409),
+    });
+    const { device, written } = makeDeviceCapturingWrites();
+
+    await device.selectDesign({ address: 1, subtile: null });
+    await flushWrites();
+
+    expect(device.data.designError).toContain('a library load is already running on this board');
+    expect(device.data.designNotice).toBeNull();
+    expect(written.join('')).not.toContain('dump_state()');
+  });
+
+  test('a vanished id says so and reloads the index', async () => {
+    setUpMergedList();
+    const fetchMock = routeFetch({
+      [`${api}/library/${entry.id}/load`]: () =>
+        jsonResponse({ error: 'no such library design', detail: '' }, 404),
+      [`${api}/designs`]: () =>
+        jsonResponse({ enabled: null, library: { max_bytes: 1, used_bytes: 0 }, designs: [demoA] }),
+      [`${api}/library`]: () =>
+        jsonResponse({ schema: 1, generated: '', base_url: '', designs: libraryEntries.slice(1) }),
+    });
+    const { device } = makeDeviceCapturingWrites();
+
+    await device.selectDesign({ address: 1, subtile: null });
+
+    expect(device.data.designError).toContain('no longer in the VGA library');
+    expect(fetchMock).toHaveBeenCalledWith(`${api}/library`, expect.anything());
+    expect(fpgaLibrary.byId[entry.id]).toBeUndefined();
   });
 });
 

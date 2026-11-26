@@ -5,12 +5,19 @@ import { createStore } from 'solid-js/store';
 import { boardInfo } from '~/model/board';
 import { updateDeviceState } from '~/model/DeviceState';
 import { compareVersions, parseFirmwareVersion } from '~/model/firmware';
-import { DaemonError, enableFpgaDesign, loadFpgaDesigns } from '~/model/fpgaDesigns';
+import {
+  DaemonError,
+  enableFpgaDesign,
+  loadFpgaDesigns,
+  noteLibraryEnabled,
+} from '~/model/fpgaDesigns';
+import { libraryLoadNotice, loadLibraryDesign, resetFpgaLibrary } from '~/model/fpgaLibrary';
 import {
   DesignAddress,
   findProject,
   formatDesignAddress,
   loadShuttle,
+  Project,
   shuttle,
 } from '~/model/shuttle';
 import type { SerialTransport } from '~/transport/SerialTransport';
@@ -80,6 +87,8 @@ export class TTBoardDevice extends EventTarget {
       factoryTest: { status: 'idle', message: '' } as IFactoryTestState,
       /** Last failure reported by the FPGA daemon, shown in the Config tab. */
       designError: null as string | null,
+      /** What the last VGA library load did beyond loading (inputs set, hidden upload). */
+      designNotice: null as string | null,
     });
     this.data = data;
     this.setData = setData;
@@ -129,9 +138,14 @@ export class TTBoardDevice extends EventTarget {
    */
   private async selectFpgaDesign(apiBase: string, design: DesignAddress, clockHz?: number) {
     this.setData('designError', null);
+    this.setData('designNotice', null);
     const project = findProject(shuttle.projects, design);
     if (!project) {
       this.setData('designError', `No design at index ${design.address}`);
+      return;
+    }
+    if (project.source === 'library') {
+      await this.loadLibraryProject(apiBase, project);
       return;
     }
     this.addLogEntry({ text: `<<< load design ${project.macro} via daemon >>>`, sent: true });
@@ -141,6 +155,34 @@ export class TTBoardDevice extends EventTarget {
       await enableFpgaDesign(apiBase, project.macro, clockHz);
     } catch (e) {
       // A daemon rejection arrives as DaemonError; a dead network as a TypeError.
+      this.setData('designError', e instanceof DaemonError ? e.message : String(e));
+    }
+  }
+
+  /**
+   * A VGA library design is loaded by the host site, which fetches it from the
+   * archive, pushes it to the Pi and enables it with the index's clock and
+   * inputs. The daemon drives `ui_in` pins behind the REPL's back, so the board
+   * state is re-read afterwards.
+   */
+  private async loadLibraryProject(apiBase: string, project: Project) {
+    this.addLogEntry({ text: `<<< load library design ${project.macro} via site >>>`, sent: true });
+    try {
+      const result = await loadLibraryDesign(apiBase, project.macro);
+      noteLibraryEnabled(result.enabled);
+      this.setData('designNotice', libraryLoadNotice(result));
+      await this.syncState();
+    } catch (e) {
+      if (e instanceof DaemonError && e.status === 404 && e.error === 'no such library design') {
+        // The index was republished without this design since the list was fetched.
+        this.setData(
+          'designError',
+          `${project.title} is no longer in the VGA library; the list has been reloaded`,
+        );
+        resetFpgaLibrary();
+        await loadFpgaDesigns(apiBase);
+        return;
+      }
       this.setData('designError', e instanceof DaemonError ? e.message : String(e));
     }
   }
