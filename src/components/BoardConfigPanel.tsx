@@ -23,6 +23,7 @@ import { deviceState, selectedDesignAddress, updateDeviceState } from '~/model/D
 import { isFactoryMode } from '~/model/factory';
 import { safeCompareVersions, subtileFirmwareVersion } from '~/model/firmware';
 import { fpgaDesigns, loadFpgaDesigns } from '~/model/fpgaDesigns';
+import { fpgaLibrary, libraryWarnings } from '~/model/fpgaLibrary';
 import {
   DesignAddress,
   findProject,
@@ -76,6 +77,28 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
 
   const selectedProject = () => findProject(shuttle.projects, selectedDesignAddress());
 
+  /** The selected VGA library design's index entry, if it has one. */
+  const libraryEntry = () => {
+    const project = selectedProject();
+    return isFpga() && project?.source === 'library' ? fpgaLibrary.byId[project.macro] : undefined;
+  };
+  const libraryBadges = () => {
+    const entry = libraryEntry();
+    return entry ? libraryWarnings(entry) : [];
+  };
+  /** The last library load's notice, only while that design is selected and still enabled. */
+  const designNotice = () => {
+    const project = selectedProject();
+    const notice = props.device.data.designNotice;
+    return isFpga() &&
+      notice &&
+      project?.source === 'library' &&
+      project.macro === notice.name &&
+      fpgaDesigns.enabled === notice.name
+      ? notice.text
+      : null;
+  };
+
   const dangerLevel = () => selectedProject()?.danger_level;
   const dangerReason = () => selectedProject()?.danger_reason;
 
@@ -122,6 +145,11 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
     const project = selectedProject();
     if (!project) {
       return null;
+    }
+    if (isFpga() && project.source === 'library') {
+      // A library design's URLs come from the site's index, not from /designs.
+      const entry = fpgaLibrary.byId[project.macro];
+      return { repo: entry?.repo_url ?? '', docs: entry?.docs_url ?? '', feedback: '' };
     }
     if (isFpga()) {
       // An FPGA design is not a shuttle project: it has no tinytapeout.com chip
@@ -233,6 +261,44 @@ export function BoardConfigPanel(props: IBoardConfigPanelProps) {
             Could not load the design list: {message()}
           </Alert>
         )}
+      </Show>
+
+      <Show when={libraryBadges().length > 0 || designNotice()}>
+        <Alert severity="info" sx={{ marginBottom: 2 }}>
+          <Stack direction="row" flexWrap="wrap" sx={{ gap: 1 }}>
+            <For each={libraryBadges()}>
+              {(badge) => (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={badge.cls === 'warn' ? 'warning' : 'default'}
+                  label={badge.text}
+                />
+              )}
+            </For>
+          </Stack>
+          <Show when={designNotice()}>{(notice) => <div>{notice()}</div>}</Show>
+        </Alert>
+      </Show>
+
+      <Show when={isFpga() && fpgaDesigns.hasLibrary && fpgaLibrary.state === 'notPublished'}>
+        <Alert severity="info" sx={{ marginBottom: 2 }}>
+          The VGA library is not published yet.
+        </Alert>
+      </Show>
+
+      <Show when={isFpga() && fpgaDesigns.hasLibrary && fpgaLibrary.state === 'error'}>
+        <Alert
+          severity="warning"
+          sx={{ marginBottom: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={retryLoadDesigns}>
+              Retry
+            </Button>
+          }
+        >
+          Could not load the VGA library: {fpgaLibrary.error}
+        </Alert>
       </Show>
 
       <Show when={props.device.data.designError}>

@@ -18,6 +18,10 @@ export interface Project {
   type?: 'project' | 'group' | 'subtile';
   /** Subtile projects only: index of the project within its group. */
   subtile_addr?: number;
+  /** FPGA boards, VGA library designs only: the Tiny Tapeout shuttle the design was made for. */
+  shuttle?: string;
+  /** FPGA boards only: where the design comes from. Missing on an ASIC shuttle's projects. */
+  source?: 'demo' | 'upload' | 'library';
 }
 
 /**

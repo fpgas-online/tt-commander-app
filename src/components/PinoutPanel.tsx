@@ -11,7 +11,8 @@ import { createResource, For, Show } from 'solid-js';
 import { boardInfo } from '~/model/board';
 import { selectedDesignAddress } from '~/model/DeviceState';
 import { safeCompareVersions } from '~/model/firmware';
-import { fpgaDesigns, pinoutFromDesign } from '~/model/fpgaDesigns';
+import { fpgaDesigns, pinoutFromDesign, pinoutFromLists } from '~/model/fpgaDesigns';
+import { fpgaLibrary } from '~/model/fpgaLibrary';
 import { findProject, Project, shuttle } from '~/model/shuttle';
 import { TTBoardDevice } from '~/ttcontrol/TTBoardDevice';
 import { AnalogPinoutTable } from './AnalogPinoutTable';
@@ -34,11 +35,30 @@ export function PinoutPanel(props: IPinoutPanelProps) {
   const selectedProject = () => findProject(shuttle.projects, selectedDesignAddress());
 
   const [projectInfo] = createResource(
-    () => ({ design: selectedDesignAddress(), byName: fpgaDesigns.byName, id: shuttle.id }),
+    () => ({
+      design: selectedDesignAddress(),
+      byName: fpgaDesigns.byName,
+      byId: fpgaLibrary.byId,
+      id: shuttle.id,
+    }),
     async (src) => {
       const project = findProject(shuttle.projects, src.design);
       if (!project) {
         return null;
+      }
+
+      if (boardInfo.kind === 'fpga' && project.source === 'library') {
+        // `/designs` lists a library design in the upload shape (finding N2):
+        // its pinout and description live only in the site's index. An entry the
+        // index no longer has gets an empty table, not an error.
+        const e = src.byId[project.macro];
+        return {
+          macro: project.macro,
+          author: e?.author ?? '',
+          description: e?.description ?? '',
+          pinout: pinoutFromLists(e?.pinout),
+          analog_pins: [],
+        };
       }
 
       if (boardInfo.kind === 'fpga') {
