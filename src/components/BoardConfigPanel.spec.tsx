@@ -296,6 +296,22 @@ describe('BoardConfigPanel (fpga) VGA library', () => {
     expect(timingFail.build_status).toBe('timing-fail');
   });
 
+  test('a PDK latch design shows the warning icon and Load stays enabled', () => {
+    // Ruling BJ: row 1 with pdk_latches set, otherwise warning-free.
+    const latch = { ...libraryEntries[1], validation: 'full-speed', pdk_latches: true };
+    const entries = libraryEntries.map((e, i) => (i === 1 ? latch : e));
+    showLibrary(mergeProjects([], entries));
+    setFpgaLibraryIndex(entries);
+    updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
+
+    const { host } = panel();
+
+    const reason = 'PDK latch cells: may not behave as on silicon';
+    expect(host.querySelector(`span[title="${reason}"] svg`)).not.toBeNull();
+    expect(loadButton(host)?.disabled).toBe(false);
+    expect(host.textContent).toContain(reason);
+  });
+
   test('a design that only lacks hardware validation gets no warning icon', () => {
     showLibrary();
     updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
