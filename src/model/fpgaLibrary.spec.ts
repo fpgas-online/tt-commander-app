@@ -430,6 +430,9 @@ describe('libraryWarnings', () => {
     expect(libraryWarnings(fullSpeed)).toEqual([]);
     expect(libraryWarnings({ ...fullSpeed, pdk_latches: false })).toEqual([]);
     expect(libraryWarnings({ ...fullSpeed, pdk_latches: true })).toEqual([LATCH]);
+    // Only a real true counts; the site drops a non-bool, but a stray string must not warn either.
+    const stringTrue = { ...fullSpeed, pdk_latches: 'true' } as unknown as LibraryEntry;
+    expect(libraryWarnings(stringTrue)).toEqual([]);
     expect(libraryWarnings({ ...entries[4], pdk_latches: true })).toEqual([
       { text: 'timing: 17.08 MHz < 25.175 MHz', cls: 'warn' },
       LATCH,
