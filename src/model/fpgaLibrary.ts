@@ -41,12 +41,8 @@ export interface LibraryEntry {
   verdict: string;
   /** `none` or `emulated`. */
   qspi: string;
-  /**
-   * The design uses PDK latch or clock-gate cells (Ruling BJ). Optional for
-   * now: an older site's index leaves it out, and missing means false. A later
-   * task makes it required; then drop the `?`.
-   */
-  pdk_latches?: boolean;
+  /** The design uses PDK latch or clock-gate cells (Ruling BJ). */
+  pdk_latches: boolean;
   poster: string | null;
   preview_gif: string | null;
   video_10s_webm: string | null;
