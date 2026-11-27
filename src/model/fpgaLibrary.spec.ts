@@ -426,7 +426,7 @@ describe('libraryWarnings', () => {
 
   test('pdk_latches gives a warn badge after the timing one', () => {
     const fullSpeed = { ...entries[1], validation: 'full-speed' };
-    expect(entries[1].pdk_latches).toBeUndefined();
+    expect(entries[1].pdk_latches).toBe(false);
     expect(libraryWarnings(fullSpeed)).toEqual([]);
     expect(libraryWarnings({ ...fullSpeed, pdk_latches: false })).toEqual([]);
     expect(libraryWarnings({ ...fullSpeed, pdk_latches: true })).toEqual([LATCH]);
