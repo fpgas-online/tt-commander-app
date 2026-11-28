@@ -440,6 +440,39 @@ describe('libraryWarnings', () => {
     ]);
   });
 
+  // Ruling CH: synthesis_differs is a nullable bool; only a real true warns.
+  const SYNTH = { text: 'Board picture may differ from the preview', cls: 'warn' };
+
+  test('synthesis_differs true gives a warn badge; every other value gives none', () => {
+    const fullSpeed = { ...entries[1], validation: 'full-speed' };
+    expect(entries[1].synthesis_differs).toBeUndefined();
+    expect(libraryWarnings(fullSpeed)).toEqual([]);
+    expect(libraryWarnings({ ...fullSpeed, synthesis_differs: true })).toEqual([SYNTH]);
+    expect(libraryWarnings({ ...fullSpeed, synthesis_differs: false })).toEqual([]);
+    expect(libraryWarnings({ ...fullSpeed, synthesis_differs: null })).toEqual([]);
+    const stringTrue = { ...fullSpeed, synthesis_differs: 'true' } as unknown as LibraryEntry;
+    expect(libraryWarnings(stringTrue)).toEqual([]);
+  });
+
+  test('synthesis_differs badge comes after pdk_latches and before validation', () => {
+    expect(libraryWarnings({ ...entries[4], pdk_latches: true, synthesis_differs: true })).toEqual([
+      { text: 'timing: 17.08 MHz < 25.175 MHz', cls: 'warn' },
+      LATCH,
+      SYNTH,
+      { text: 'not hardware-validated', cls: 'info' },
+    ]);
+  });
+
+  test('a synthesis_differs design is medium danger, never high', () => {
+    expect(
+      libraryToProject({ ...entries[1], validation: 'full-speed', synthesis_differs: true }, 2),
+    ).toMatchObject({
+      address: 2,
+      danger_level: 'medium',
+      danger_reason: SYNTH.text,
+    });
+  });
+
   test('a latch design is medium danger, never high', () => {
     expect(
       libraryToProject({ ...entries[1], validation: 'full-speed', pdk_latches: true }, 2),

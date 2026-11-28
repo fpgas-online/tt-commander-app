@@ -312,6 +312,22 @@ describe('BoardConfigPanel (fpga) VGA library', () => {
     expect(host.textContent).toContain(reason);
   });
 
+  test('a synthesis_differs design shows the warning icon and Load stays enabled', () => {
+    // Ruling CH: row 1 with synthesis_differs set, otherwise warning-free.
+    const differs = { ...libraryEntries[1], validation: 'full-speed', synthesis_differs: true };
+    const entries = libraryEntries.map((e, i) => (i === 1 ? differs : e));
+    showLibrary(mergeProjects([], entries));
+    setFpgaLibraryIndex(entries);
+    updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
+
+    const { host } = panel();
+
+    const reason = 'Board picture may differ from the preview';
+    expect(host.querySelector(`span[title="${reason}"] svg`)).not.toBeNull();
+    expect(loadButton(host)?.disabled).toBe(false);
+    expect(host.textContent).toContain(reason);
+  });
+
   test('a design that only lacks hardware validation gets no warning icon', () => {
     showLibrary();
     updateDeviceState({ selectedDesign: 1, selectedSubtile: null });
