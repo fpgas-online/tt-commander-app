@@ -43,6 +43,12 @@ export interface LibraryEntry {
   qspi: string;
   /** The design uses PDK latch or clock-gate cells (Ruling BJ). */
   pdk_latches: boolean;
+  /**
+   * Ruling CH: the build's synthesised netlist reproduces the board capture and
+   * the RTL preview does not. A nullable bool: `null` is not checked. Optional for
+   * now (absent is read as null); a later step makes it required.
+   */
+  synthesis_differs?: boolean | null;
   poster: string | null;
   preview_gif: string | null;
   video_10s_webm: string | null;
@@ -194,6 +200,11 @@ export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
   // Ruling BJ: the design uses PDK latch or clock-gate cells.
   if (e.pdk_latches === true) {
     badges.push({ text: 'PDK latch cells: may not behave as on silicon', cls: 'warn' });
+  }
+  // Ruling CH: the board capture matches the synthesised netlist, not the RTL preview.
+  // Strictly the boolean true; false, null, absent and any other value show no badge.
+  if (e.synthesis_differs === true) {
+    badges.push({ text: 'Board picture may differ from the preview', cls: 'warn' });
   }
   if (e.validation === 'none') {
     badges.push({ text: 'not hardware-validated', cls: 'info' });

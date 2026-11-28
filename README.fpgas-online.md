@@ -131,7 +131,9 @@ in tinytapeout-vga-videos, section 4.
   Errors go to `designError`; a `dump_state()` failure after a successful load is only logged.
 - **Badges** (the site panel's texts, spec section 1): `timing: <fmax> MHz < <clock> MHz`,
   `timing not met on a secondary clock or path` and, when `pdk_latches` is true (Ruling BJ),
-  `PDK latch cells: may not behave as on silicon` are
+  `PDK latch cells: may not behave as on silicon` and, when the nullable, optional
+  `synthesis_differs` is true (Ruling CH; false, null and absent show nothing),
+  `Board picture may differ from the preview` are
   warnings; `not hardware-validated`,
   `validated at MCU speed only`, `QSPI emulated`, `video: <verdict>` and `inputs set: 0x..`
   (only when `ui_in` is neither null nor 0) are info. A warning sets `danger_level: 'medium'`
