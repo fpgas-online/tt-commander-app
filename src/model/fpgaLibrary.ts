@@ -181,7 +181,8 @@ function hex2(n: number) {
 /**
  * The badges of an entry, exactly the spec's table (section 1, Warnings) and the
  * site panel's texts. A warning is a doubt about how the design behaves on the
- * FPGA: missed timing, or PDK latch cells (Ruling BJ). Nothing here ever
+ * FPGA: missed timing, PDK latch cells (Ruling BJ), or a board picture that may
+ * differ from the preview (synthesis_differs, Ruling CH). Nothing here ever
  * disables Load.
  */
 export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
@@ -251,7 +252,7 @@ export function libraryToProject(e: LibraryEntry, address: number): Project {
     repo: e.repo_url,
     commit: e.commit,
     clock_hz: e.clock_hz,
-    // 'high' would disable Load; a missed timing or a latch design is only ever a warning.
+    // 'high' would disable Load; a missed timing, a latch design or synthesis_differs is only ever a warning.
     danger_level: warn ? 'medium' : 'safe',
     ...(warn ? { danger_reason: badges.map((b) => b.text).join('; ') } : {}),
     type: 'project',
