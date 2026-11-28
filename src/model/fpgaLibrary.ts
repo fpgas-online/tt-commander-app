@@ -43,6 +43,12 @@ export interface LibraryEntry {
   qspi: string;
   /** The design uses PDK latch or clock-gate cells (Ruling BJ). */
   pdk_latches: boolean;
+  /**
+   * Ruling CH: the build's synthesised netlist reproduces the board capture and
+   * the RTL preview does not. A nullable bool: `null` is not checked. Optional for
+   * now (absent is read as null); a later step makes it required.
+   */
+  synthesis_differs?: boolean | null;
   poster: string | null;
   preview_gif: string | null;
   video_10s_webm: string | null;
@@ -175,7 +181,8 @@ function hex2(n: number) {
 /**
  * The badges of an entry, exactly the spec's table (section 1, Warnings) and the
  * site panel's texts. A warning is a doubt about how the design behaves on the
- * FPGA: missed timing, or PDK latch cells (Ruling BJ). Nothing here ever
+ * FPGA: missed timing, PDK latch cells (Ruling BJ), or a board picture that may
+ * differ from the preview (synthesis_differs, Ruling CH). Nothing here ever
  * disables Load.
  */
 export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
@@ -194,6 +201,11 @@ export function libraryWarnings(e: LibraryEntry): LibraryBadge[] {
   // Ruling BJ: the design uses PDK latch or clock-gate cells.
   if (e.pdk_latches === true) {
     badges.push({ text: 'PDK latch cells: may not behave as on silicon', cls: 'warn' });
+  }
+  // Ruling CH: the board capture matches the synthesised netlist, not the RTL preview.
+  // Strictly the boolean true; false, null, absent and any other value show no badge.
+  if (e.synthesis_differs === true) {
+    badges.push({ text: 'Board picture may differ from the preview', cls: 'warn' });
   }
   if (e.validation === 'none') {
     badges.push({ text: 'not hardware-validated', cls: 'info' });
@@ -240,7 +252,7 @@ export function libraryToProject(e: LibraryEntry, address: number): Project {
     repo: e.repo_url,
     commit: e.commit,
     clock_hz: e.clock_hz,
-    // 'high' would disable Load; a missed timing or a latch design is only ever a warning.
+    // 'high' would disable Load; a missed timing, a latch design or synthesis_differs is only ever a warning.
     danger_level: warn ? 'medium' : 'safe',
     ...(warn ? { danger_reason: badges.map((b) => b.text).join('; ') } : {}),
     type: 'project',
